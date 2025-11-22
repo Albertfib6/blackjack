@@ -347,8 +347,6 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
 
   return uchild_struct->TID;
 }
-  
-
 
 void sys_ThreadExit() {
    // Obtener el thread actual; se asume que current() devuelve un puntero a struct task_struct.

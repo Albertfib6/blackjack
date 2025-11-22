@@ -6,6 +6,7 @@
 #include <segment.h>
 #include <hardware.h>
 #include <io.h>
+#include <mm.h>
 
 #include <sched.h>
 
@@ -17,11 +18,11 @@ Register    idtR;
 char char_map[] =
 {
   '\0','\0','1','2','3','4','5','6',
-  '7','8','9','0','\'','�','\0','\0',
+  '7','8','9','0','\'','�','\0','\0',
   'q','w','e','r','t','y','u','i',
   'o','p','`','+','\0','\0','a','s',
-  'd','f','g','h','j','k','l','�',
-  '\0','�','\0','�','z','x','c','v',
+  'd','f','g','h','j','k','l','�',
+  '\0','�','\0','�','z','x','c','v',
   'b','n','m',',','.','-','\0','*',
   '\0','\0','\0','\0','\0','\0','\0','\0',
   '\0','\0','\0','\0','\0','\0','\0','7',
@@ -46,6 +47,51 @@ void keyboard_routine()
   unsigned char c = inb(0x60);
   
   if (c&0x80) printc_xy(0, 0, char_map[c&0x7f]);
+}
+
+void page_fault_routine(int error_code, unsigned int fault_addr) {
+    struct task_struct *t = current();
+    page_table_entry *PT = get_PT(t);
+
+    /* LOGICA DE DYNAMIC STACK GROWTH 
+       Comprobamos si la dirección del fallo (fault_addr) cae dentro 
+       del "hueco" reservado para la pila del thread.
+    */
+
+    // Convertimos dirección lineal a número de página lógica
+    unsigned int logical_page = fault_addr >> 12;
+
+    // Rango válido: Desde PAG_INICI hasta (PAG_INICI + STACK_PAGES)
+    if (logical_page >= t->PAG_INICI && 
+        logical_page < (t->PAG_INICI + t->STACK_PAGES)) {
+        
+        // Es un acceso a la zona reservada de pila.
+        // Comprobamos que no haya ya memoria asignada (sanity check)
+        if (get_frame(PT, logical_page) == -1) {
+            
+            // Asignar nueva página física
+            int new_frame = alloc_frame();
+            
+            if (new_frame != -1) {
+                // Mapear la página
+                set_ss_pag(PT, logical_page, new_frame);
+                
+                // Muy Importante: Como hemos modificado la tabla de páginas,
+                // debemos invalidar la TLB para esa dirección o recargar CR3,
+                // de lo contrario la CPU seguirá pensando que la página no existe.
+                set_cr3(get_DIR(t)); 
+                
+                return; // Volvemos a ensamblador -> IRET -> Re-ejecutar PUSH
+            } else {
+                // No queda memoria física en el sistema
+                while(1);
+            }
+        }
+    }
+
+    // Si llegamos aquí, no fue un crecimiento de pila válido.
+    // Fue un acceso ilegal real (Segmentation Fault).
+    while(1);
 }
 
 void setInterruptHandler(int vector, void (*handler)(), int maxAccessibleFromPL)
@@ -95,6 +141,7 @@ void setTrapHandler(int vector, void (*handler)(), int maxAccessibleFromPL)
 void clock_handler();
 void keyboard_handler();
 void system_call_handler();
+void page_fault_handler();
 
 void setMSR(unsigned long msr_number, unsigned long high, unsigned long low);
 
@@ -116,6 +163,7 @@ void setIdt()
   /* ADD INITIALIZATION CODE FOR INTERRUPT VECTOR */
   setInterruptHandler(32, clock_handler, 0);
   setInterruptHandler(33, keyboard_handler, 0);
+  setInterruptHandler(14, page_fault_handler, 0);
 
   setSysenter();
 

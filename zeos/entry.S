@@ -117,3 +117,38 @@ sysenter_fin:
 	movl 12(%esp), %ecx	      // User stack address
 	sti
 	sysexit
+
+ENTRY(page_fault_handler)
+    /* 1. Guardar el contexto del proceso actual */
+    SAVE_ALL
+
+    /* 2. Obtener los parámetros para la función de C */
+    /* La función de C será: void pf_routine(int error_code, int fault_addr); */
+    
+    movl %cr2, %eax      ; Leer la dirección que causó el fallo desde CR2
+    pushl %eax           ; 2º Argumento: fault_address
+    
+    /* El Error Code fue empujado por la CPU automáticamente antes de saltar aquí.
+       Está en la pila, pero "enterrado" bajo los registros de SAVE_ALL.
+       Para simplificar, en ZeOS a veces no se pasa, pero si queremos ser estrictos:
+       OFFSET = Tamaño de SAVE_ALL + 4 bytes (del push eax anterior) */
+    pushl 0x30(%esp)     ; 1º Argumento: error_code (Aproximado, depende de SAVE_ALL)
+
+    /* 3. Llamar a la lógica en C */
+    call page_fault_routine
+
+    /* 4. Limpiar argumentos de la llamada a C */
+    addl $8, %esp
+
+    /* 5. Restaurar el contexto */
+    RESTORE_ALL
+
+    /* 6. IMPORTANTE: Eliminar el Error Code de la excepción */
+    /* La excepción 14 empuja un código de error en la pila. IRET no lo quita.
+       Si no hacemos esto, IRET intentará usar el código de error como EIP y fallará. */
+    addl $4, %esp 
+
+    /* 7. Volver al proceso (re-ejecutar la instrucción que falló) */
+    iret
+
+    

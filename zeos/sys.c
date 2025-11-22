@@ -19,6 +19,8 @@
 
 #define LECTURA 0
 #define ESCRIPTURA 1
+// Definimos el tamaño máximo que podrá crecer la pila y el gap de seguridad
+#define MAX_USER_STACK_PAGES 20 
 
 void * get_ebp();
 
@@ -237,6 +239,139 @@ int sys_get_stats(int pid, struct stats *st)
   return -ESRCH; /*ESRCH */
 }
 
-void sys_ThreadCreate() {}
 
-void sys_ThreadExit() {}
+int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
+ 
+  struct task_struct *uchild_struct;
+  struct list_head *lhcurrent = NULL;
+  union task_union *uchild;
+  
+  /* 1. Any free task_struct? */
+  if (list_empty(&freequeue)) return -ENOMEM;
+
+  lhcurrent = list_first(&freequeue);
+  list_del(lhcurrent);
+  
+  uchild = (union task_union*)list_head_to_task_struct(lhcurrent);
+  uchild_struct = &uchild->task;
+  
+  /* 2. Copy the parent's task struct to child's */
+  copy_data(current(), uchild, sizeof(union task_union));
+  
+  // Inicializar identidad del thread
+  uchild_struct->TID = ++global_TID;
+  uchild_struct->PID = current()->PID; // Comparten PID
+  uchild_struct->state = ST_READY;
+
+  /* 3. Buscar hueco en la memoria lógica para la pila */
+  page_table_entry *current_PT = get_PT(current());
+  int stack_ini = -1;
+  int pages_needed = MAX_USER_STACK_PAGES;
+  
+  // Empezamos a buscar después de la zona de datos
+  unsigned long search_start = PAG_LOG_INIT_DATA + NUM_PAG_DATA + 10; 
+
+  for (int start = search_start; start < TOTAL_PAGES - pages_needed; start++) {
+      int free = 1;
+      for (int offset = 0; offset < pages_needed; offset++) {
+          if (current_PT[start + offset].bits.present || get_frame(current_PT, start + offset) != -1) {
+              free = 0;
+              start += offset; 
+              break;
+          }
+      }
+      if (free) {
+          stack_ini = start;
+          break;
+      }
+  }
+
+  if (stack_ini == -1) {
+      list_add_tail(lhcurrent, &freequeue);
+      return -ENOMEM; 
+  }
+
+  /* Guardamos información para el Crecimiento Dinámico */
+  uchild_struct->PAG_INICI = stack_ini; 
+  uchild_struct->STACK_PAGES = pages_needed; 
+
+  /* 4. Asignar SOLO 1 página física inicial (la cima lógica) */
+  int logical_page_top = stack_ini + pages_needed - 1;
+  int new_ph_pag = alloc_frame();
+  
+  if (new_ph_pag == -1) {
+      list_add_tail(lhcurrent, &freequeue);
+      return -EAGAIN;
+  }
+  
+  set_ss_pag(current_PT, logical_page_top, new_ph_pag);
+
+  /* 5. Preparar Pila de Usuario (Parámetro y Retorno) */
+  // Dirección lineal base (techo de la pila)
+  unsigned int user_stack_base = (logical_page_top + 1) << 12;
+  unsigned int *stack_ptr = (unsigned int *)user_stack_base;
+  
+  stack_ptr -= 1; 
+  *stack_ptr = (unsigned int)parameter; // Push Parámetro
+  
+  stack_ptr -= 1; 
+  *stack_ptr = sys_ThreadExit; // Push Fake Return Address (o wrapper_exit)
+
+  /* 6. Preparar Pila de Sistema (Kernel Stack) para task_switch */
+  
+  // --- CONTEXTO HARDWARE (IRET) ---
+  // Reutilizamos SS, CS, EFLAGS del padre que ya están en el stack por copy_data
+  
+  // ESP: Apunta a la pila de usuario modificada (stack_ptr ya tiene el valor correcto)
+  uchild->stack[KERNEL_STACK_SIZE - 2] = (unsigned long)stack_ptr; 
+  
+  // EIP: Apunta a la función del thread
+  uchild->stack[KERNEL_STACK_SIZE - 5] = (unsigned long)function; 
+
+  // --- CONTEXTO SOFTWARE (task_switch) ---
+  // Tomamos la dirección justo debajo del contexto HW (EIP está en -5)
+  unsigned long *ksp = &uchild->stack[KERNEL_STACK_SIZE - 5];
+  
+  ksp -= 10; // Espacio para registros generales (EAX, EBX...)
+  ksp -= 1; 
+  *ksp = 0; // Fake EBP para el POP EBP
+  ksp -= 1; 
+  *ksp = (unsigned long) ret_from_fork; // Dirección de retorno CLAVE
+
+  // Guardamos el puntero final en el PCB
+  uchild->task.register_esp = (unsigned long) ksp;
+
+  /* 7. Encolar y Retornar */
+  init_stats(&uchild_struct->p_stats);
+  list_add_tail(&uchild_struct->list, &readyqueue);
+
+  return uchild_struct->TID;
+}
+  
+
+
+void sys_ThreadExit() {
+   // Obtener el thread actual; se asume que current() devuelve un puntero a struct task_struct.
+    struct task_struct *current_task = current();
+    page_table_entry *current_PT = get_PT(current_task);
+
+    // Recorremos los STACK_PAGES asignados a la pila. La información sobre el inicio
+    // y la cantidad de páginas debe haberse guardado al crearlo.
+    for (int i = 0; i < current_task->STACK_PAGES; i++) {
+        int page_num = current_task->PAG_INICI + i;
+        int frame = get_frame(current_PT, page_num);
+        if (frame != -1) { // Verificamos que realmente haya un frame asignado.
+            free_frame(frame);
+            del_ss_pag(current_PT, page_num);
+        }
+    }
+    
+    current_task->TID = -1;
+
+    //list_del(&(current_task->list));
+
+    list_add_tail(&(current_task->list), &freequeue);  
+    // 4. Llamar al scheduler para cambiar de contexto. Esta llamada no debería retornar.
+    sched_next_rr();
+}
+

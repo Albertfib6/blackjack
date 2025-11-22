@@ -239,9 +239,31 @@ int sys_fork(void)
               del_ss_pag(parent_PT, temp_page);
               set_cr3(get_DIR(current())); // Flush TLB
           } else {
-              /* Manejo de error de memoria (omitido por brevedad: liberar todo y salir) */
-               list_add_tail(lhcurrent, &freequeue);
-               return -EAGAIN;
+              /* ERROR: No hay memoria para copiar la pila completa. */
+              
+              /* 1. Liberar las páginas de PILA que ya habíamos asignado en este bucle */
+              /* Iteramos desde 0 hasta i (exclusivo) para deshacer */
+              for (int k = 0; k < i; k++) {
+                  int undo_log_page = start_stack + k;
+                  
+                  /* Solo liberamos si realmente asignamos un frame (verificamos en el hijo) */
+                  if (get_frame(process_PT, undo_log_page) != -1) {
+                      free_frame(get_frame(process_PT, undo_log_page));
+                      del_ss_pag(process_PT, undo_log_page);
+                  }
+              }
+
+              /* 2. Liberar las páginas de DATOS GLOBALES asignadas en el paso anterior */
+              for (int k = 0; k < NUM_PAG_DATA; k++) {
+                  free_frame(get_frame(process_PT, PAG_LOG_INIT_DATA + k));
+                  del_ss_pag(process_PT, PAG_LOG_INIT_DATA + k);
+              }
+
+              /* 3. Liberar el task_struct (devolver a la cola de libres) */
+              list_add_tail(lhcurrent, &freequeue);
+
+              /* 4. Retornar código de error */
+              return -EAGAIN;
           }
       }
   }

@@ -22,7 +22,10 @@
 // Definimos el tamaño máximo que podrá crecer la pila y el gap de seguridad
 #define MAX_USER_STACK_PAGES 20 
 
+#define FORCE_STACK_PAGE 500
+
 void * get_ebp();
+extern void ret_from_fork();
 
 int check_fd(int fd, int permissions)
 {
@@ -53,10 +56,6 @@ int sys_getpid()
 
 int next_free_id = 1000;
 
-int ret_from_fork()
-{
-  return 0;
-}
 
 // int sys_fork(void)
 // {
@@ -399,14 +398,11 @@ int sys_get_stats(int pid, struct stats *st)
   return -ESRCH; /*ESRCH */
 }
 
-
 int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
- 
   struct task_struct *uchild_struct;
   struct list_head *lhcurrent = NULL;
   union task_union *uchild;
   
-  /* 1. Any free task_struct? */
   if (list_empty(&freequeue)) return -ENOMEM;
 
   lhcurrent = list_first(&freequeue);
@@ -415,93 +411,81 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   uchild = (union task_union*)list_head_to_task_struct(lhcurrent);
   uchild_struct = &uchild->task;
   
-  /* 2. Copy the parent's task struct to child's */
   copy_data(current(), uchild, sizeof(union task_union));
   
-  // Inicializar identidad del thread
   uchild_struct->TID = ++next_free_id;
-  uchild_struct->PID = current()->PID; // Comparten PID
+  uchild_struct->PID = current()->PID; 
   uchild_struct->state = ST_READY;
 
-  /* 3. Buscar hueco en la memoria lógica para la pila */
+  /* --- BÚSQUEDA DE MEMORIA SEGURA --- */
   page_table_entry *current_PT = get_PT(current());
   int stack_ini = -1;
   int pages_needed = MAX_USER_STACK_PAGES;
-  
-  // Empezamos a buscar después de la zona de datos
-  unsigned long search_start = PAG_LOG_INIT_DATA + NUM_PAG_DATA + 10; 
 
-  for (int start = search_start; start < TOTAL_PAGES - pages_needed; start++) {
+  /* Buscamos hueco usando SOLO get_frame */
+  for (int start = 300; start < 900; start++) {
       int free = 1;
       for (int offset = 0; offset < pages_needed; offset++) {
-          if (current_PT[start + offset].bits.present || get_frame(current_PT, start + offset) != -1) {
-              free = 0;
+          /* CORRECCIÓN: Usamos get_frame(). 
+             Si devuelve != -1 es que hay pagina fisica asignada (ocupado).
+             Si devuelve -1, asumimos libre. */
+          if (get_frame(current_PT, start + offset) != -1) { 
+              free = 0; 
               start += offset; 
               break;
           }
       }
-      if (free) {
-          stack_ini = start;
-          break;
+      if (free) { 
+          stack_ini = start; 
+          break; 
       }
   }
 
+  /* Plan B: Si no encontramos hueco (tabla sucia), forzamos la 500 */
   if (stack_ini == -1) {
-      list_add_tail(lhcurrent, &freequeue);
-      return -ENOMEM; 
+      for(int k=0; k<pages_needed; k++) del_ss_pag(current_PT, 500+k);
+      stack_ini = 500;
   }
 
-  /* Guardamos información para el Crecimiento Dinámico */
   uchild_struct->PAG_INICI = stack_ini; 
   uchild_struct->STACK_PAGES = pages_needed; 
 
-  /* 4. Asignar SOLO 1 página física inicial (la cima lógica) */
+  /* Asignación de memoria física */
   int logical_page_top = stack_ini + pages_needed - 1;
   int new_ph_pag = alloc_frame();
   
-  if (new_ph_pag == -1) {
-      list_add_tail(lhcurrent, &freequeue);
-      return -EAGAIN;
-  }
+  if (new_ph_pag == -1) { list_add_tail(lhcurrent, &freequeue); return -EAGAIN; }
   
   set_ss_pag(current_PT, logical_page_top, new_ph_pag);
+  set_cr3(get_DIR(current())); 
 
-  /* 5. Preparar Pila de Usuario (Parámetro y Retorno) */
-  // Dirección lineal base (techo de la pila)
+  /* --- PILA USUARIO --- */
   unsigned int user_stack_base = (logical_page_top + 1) << 12;
   unsigned int *stack_ptr = (unsigned int *)user_stack_base;
   
-  stack_ptr -= 1; 
-  *stack_ptr = (unsigned int)parameter; // Push Parámetro
-  
-  stack_ptr -= 1; 
-  *stack_ptr = sys_ThreadExit; // Push Fake Return Address (o wrapper_exit)
+  stack_ptr -= 1; *stack_ptr = (unsigned int)parameter; 
+  stack_ptr -= 1; *stack_ptr = 0; 
 
-  /* 6. Preparar Pila de Sistema (Kernel Stack) para task_switch */
+  /* --- PILA KERNEL (Construcción Manual) --- */
+  /* Usamos puntero directo para evitar errores de aritmetica */
+  unsigned long *kstack = (unsigned long *)&uchild->stack[KERNEL_STACK_SIZE];
   
-  // --- CONTEXTO HARDWARE (IRET) ---
-  // Reutilizamos SS, CS, EFLAGS del padre que ya están en el stack por copy_data
-  
-  // ESP: Apunta a la pila de usuario modificada (stack_ptr ya tiene el valor correcto)
-  uchild->stack[KERNEL_STACK_SIZE - 2] = (unsigned long)stack_ptr; 
-  
-  // EIP: Apunta a la función del thread
-  uchild->stack[KERNEL_STACK_SIZE - 5] = (unsigned long)function; 
+  /* Contexto IRET (Hardware) */
+  kstack -= 1; *kstack = 0x2B;              // SS 
+  kstack -= 1; *kstack = (unsigned long)stack_ptr; // ESP 
+  kstack -= 1; *kstack = 0x202;             // EFLAGS
+  kstack -= 1; *kstack = 0x23;              // CS 
+  kstack -= 1; *kstack = (unsigned long)function;  // EIP 
 
-  // --- CONTEXTO SOFTWARE (task_switch) ---
-  // Tomamos la dirección justo debajo del contexto HW (EIP está en -5)
-  unsigned long *ksp = &uchild->stack[KERNEL_STACK_SIZE - 5];
-  
-  ksp -= 10; // Espacio para registros generales (EAX, EBX...)
-  ksp -= 1; 
-  *ksp = 0; // Fake EBP para el POP EBP
-  ksp -= 1; 
-  *ksp = (unsigned long) ret_from_fork; // Dirección de retorno CLAVE
+  /* Espacio SAVE_ALL */
+  kstack -= 11; 
 
-  // Guardamos el puntero final en el PCB
-  uchild->task.register_esp = (unsigned long) ksp;
+  /* Contexto Task Switch */
+  kstack -= 1; *kstack = (unsigned long) ret_from_fork; // RET ADDR
+  kstack -= 1; *kstack = 0; // EBP
 
-  /* 7. Encolar y Retornar */
+  uchild->task.register_esp = (unsigned long) kstack;
+
   init_stats(&uchild_struct->p_stats);
   list_add_tail(&uchild_struct->list, &readyqueue);
 

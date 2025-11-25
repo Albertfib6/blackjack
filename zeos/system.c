@@ -77,7 +77,7 @@ int __attribute__((__section__(".text.main")))
 
   /* Initialize hardware data */
   setGdt(); /* Definicio de la taula de segments de memoria */
-  setIdt(); /* Definicio del vector de interrupcions */
+  idt_init(); /* Definicio del vector de interrupcions */
   setTSS(); /* Definicio de la TSS */
 
   /* Initialize Memory */

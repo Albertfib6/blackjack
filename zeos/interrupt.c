@@ -36,7 +36,7 @@ int zeos_ticks = 0;
 
 void clock_routine()
 {
-  zeos_show_clock();
+  //zeos_show_clock();
   zeos_ticks ++;
   
   schedule();
@@ -152,13 +152,13 @@ void setSysenter()
   setMSR(0x176, 0, (unsigned long)system_call_handler);
 }
 
-void setIdt()
+void idt_init()
 {
   /* Program interrups/exception service routines */
   idtR.base  = (DWord)idt;
   idtR.limit = IDT_ENTRIES * sizeof(Gate) - 1;
   
-  set_handlers();
+  //set_handlers();
 
   /* ADD INITIALIZATION CODE FOR INTERRUPT VECTOR */
   setInterruptHandler(32, clock_handler, 0);

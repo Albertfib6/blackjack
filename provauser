@@ -1,0 +1,57 @@
+#include <libc.h>
+
+/* Función para probar la pila profunda */
+void funcion_thread_pesado(void *parametro) {
+    int id = (int)parametro;
+    
+    write(1, "Thread iniciado. Intentando romper la pila...\n", 46);
+
+    /* PRUEBA DE FUEGO: Crecimiento de Pila
+       El enunciado dice que la pila inicial es 1 página (4096 bytes).
+       Creamos un array de 5000 bytes. Al escribir en el final, 
+       nos salimos de la página inicial.
+       
+       - Si tu page_fault_routine funciona: El sistema pausa, asigna memoria y sigue.
+       - Si falla: Saldrá un error de sistema o el ordenador se reiniciará.
+    */
+    char array_gigante[6000]; 
+    
+    // Escribimos lejos para forzar el Page Fault
+    array_gigante[0] = 'A';
+    array_gigante[5000] = 'Z'; 
+
+    if (array_gigante[0] == 'A' && array_gigante[5000] == 'Z') {
+        write(1, "EXITO: La pila ha crecido dinamicamente!\n", 41);
+    } else {
+        write(1, "ERROR: Memoria corrupta\n", 24);
+    }
+
+    /* Probamos que ThreadExit funcione */
+    ThreadExit();
+}
+
+int __attribute__ ((__section__(".text.main")))
+  main(void)
+{
+    /* Test 1: Creación Básica */
+    write(1, "Iniciando Test Milestone 1...\n", 30);
+    
+    int pid_hilo = ThreadCreate(funcion_thread_pesado, (void*)1);
+
+    if (pid_hilo < 0) {
+        write(1, "ERROR: Fallo al crear hilo\n", 27);
+    } else {
+        write(1, "Hilo creado correctamente. Esperando...\n", 40);
+    }
+
+    /* Hacemos un bucle para esperar y no terminar el proceso padre inmediatamente.
+       En un caso real usarías algún mecanismo de sincronización, 
+       pero un while largo sirve para ver el resultado en pantalla.
+    */
+    long i;
+    for (i = 0; i < 100000000; i++); 
+
+    write(1, "Test finalizado.\n", 17);
+
+    while(1);
+}

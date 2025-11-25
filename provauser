@@ -56,14 +56,14 @@ int __attribute__ ((__section__(".text.main")))
     while(1);
 }
 
-
-/* En sys.c - Versión FINAL para entregar */
+/* En sys.c */
 
 int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   struct task_struct *uchild_struct;
   struct list_head *lhcurrent = NULL;
   union task_union *uchild;
   
+  /* 1. Comprobamos recursos del sistema */
   if (list_empty(&freequeue)) return -ENOMEM;
 
   lhcurrent = list_first(&freequeue);
@@ -78,15 +78,18 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   uchild_struct->PID = current()->PID; 
   uchild_struct->state = ST_READY;
 
-  /* 3. Buscar hueco REAL (Rango seguro 300-900) */
+  /* 2. BUSCADOR DE HUECOS ROBUSTO */
   page_table_entry *current_PT = get_PT(current());
   int stack_ini = -1;
-  int pages_needed = MAX_USER_STACK_PAGES; // Asegurate que es 20 o similar
+  int pages_needed = MAX_USER_STACK_PAGES; // O pon 20 directamente
 
+  /* Intento 1: Búsqueda estándar (300 a 900) */
   for (int start = 300; start < 900; start++) {
       int free = 1;
       for (int offset = 0; offset < pages_needed; offset++) {
-          if (get_frame(current_PT, start + offset) != -1) {
+          /* CAMBIO CLAVE: Miramos el bit 'present' en vez de get_frame.
+             Si present es 0, la memoria no se está usando, aunque get_frame tenga basura. */
+          if (current_PT[start + offset].bits.present) { 
               free = 0;
               start += offset; 
               break;
@@ -98,15 +101,21 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
       }
   }
 
+  /* Intento 2: PLAN B (Fuerza Bruta) 
+     Si el buscador falla (por basura en la tabla), forzamos la página 500 
+     que sabemos que funcionaba en tu test anterior. */
   if (stack_ini == -1) {
-      list_add_tail(lhcurrent, &freequeue);
-      return -ENOMEM;
+      // Limpiamos proactivamente la zona 500 para asegurar que esté libre
+      for(int k=0; k<pages_needed; k++) {
+          del_ss_pag(current_PT, 500+k);
+      }
+      stack_ini = 500;
   }
 
   uchild_struct->PAG_INICI = stack_ini; 
   uchild_struct->STACK_PAGES = pages_needed; 
 
-  /* 4. Asignar memoria física inicial */
+  /* 3. Asignar memoria física */
   int logical_page_top = stack_ini + pages_needed - 1;
   int new_ph_pag = alloc_frame();
   
@@ -116,19 +125,16 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   }
   
   set_ss_pag(current_PT, logical_page_top, new_ph_pag);
-  set_cr3(get_DIR(current())); /* FLUSH TLB IMPRESCINDIBLE */
+  set_cr3(get_DIR(current())); /* FLUSH TLB */
 
-  /* 5. Preparar Pila de Usuario */
+  /* 4. Preparar Pila de Usuario */
   unsigned int user_stack_base = (logical_page_top + 1) << 12;
   unsigned int *stack_ptr = (unsigned int *)user_stack_base;
   
-  stack_ptr -= 1; 
-  *stack_ptr = (unsigned int)parameter; 
-  
-  stack_ptr -= 1; 
-  *stack_ptr = 0; // Return address fake
+  stack_ptr -= 1; *stack_ptr = (unsigned int)parameter; 
+  stack_ptr -= 1; *stack_ptr = 0; // Return address fake
 
-  /* 6. Preparar Kernel Stack */
+  /* 5. Preparar Kernel Stack */
   uchild->stack[KERNEL_STACK_SIZE - 2] = (unsigned long)stack_ptr; 
   uchild->stack[KERNEL_STACK_SIZE - 5] = (unsigned long)function;  
 

@@ -1,0 +1,156 @@
+#include <libc.h>
+
+/* Función para probar la pila profunda */
+void funcion_thread_pesado(void *parametro) {
+    int id = (int)parametro;
+    
+    write(1, "Thread iniciado. Intentando romper la pila...\n", 46);
+
+    /* PRUEBA DE FUEGO: Crecimiento de Pila
+       El enunciado dice que la pila inicial es 1 página (4096 bytes).
+       Creamos un array de 5000 bytes. Al escribir en el final, 
+       nos salimos de la página inicial.
+       
+       - Si tu page_fault_routine funciona: El sistema pausa, asigna memoria y sigue.
+       - Si falla: Saldrá un error de sistema o el ordenador se reiniciará.
+    */
+    char array_gigante[6000]; 
+    
+    // Escribimos lejos para forzar el Page Fault
+    array_gigante[0] = 'A';
+    array_gigante[5000] = 'Z'; 
+
+    if (array_gigante[0] == 'A' && array_gigante[5000] == 'Z') {
+        write(1, "EXITO: La pila ha crecido dinamicamente!\n", 41);
+    } else {
+        write(1, "ERROR: Memoria corrupta\n", 24);
+    }
+
+    /* Probamos que ThreadExit funcione */
+    ThreadExit();
+}
+
+int __attribute__ ((__section__(".text.main")))
+  main(void)
+{
+    /* Test 1: Creación Básica */
+    write(1, "Iniciando Test Milestone 1...\n", 30);
+    
+    int pid_hilo = ThreadCreate(funcion_thread_pesado, (void*)1);
+
+    if (pid_hilo < 0) {
+        write(1, "ERROR: Fallo al crear hilo\n", 27);
+    } else {
+        write(1, "Hilo creado correctamente. Esperando...\n", 40);
+    }
+
+    /* Hacemos un bucle para esperar y no terminar el proceso padre inmediatamente.
+       En un caso real usarías algún mecanismo de sincronización, 
+       pero un while largo sirve para ver el resultado en pantalla.
+    */
+    long i;
+    for (i = 0; i < 100000000; i++); 
+
+    write(1, "Test finalizado.\n", 17);
+
+    while(1);
+}
+
+/* En sys.c */
+
+int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
+  struct task_struct *uchild_struct;
+  struct list_head *lhcurrent = NULL;
+  union task_union *uchild;
+  
+  if (list_empty(&freequeue)) return -ENOMEM;
+
+  lhcurrent = list_first(&freequeue);
+  list_del(lhcurrent);
+  
+  uchild = (union task_union*)list_head_to_task_struct(lhcurrent);
+  uchild_struct = &uchild->task;
+  
+  copy_data(current(), uchild, sizeof(union task_union));
+  
+  uchild_struct->TID = ++next_free_id;
+  uchild_struct->PID = current()->PID; 
+  uchild_struct->state = ST_READY;
+
+  /* --- BÚSQUEDA DE MEMORIA SEGURA --- */
+  page_table_entry *current_PT = get_PT(current());
+  int stack_ini = -1;
+  int pages_needed = MAX_USER_STACK_PAGES;
+
+  /* Buscamos hueco usando SOLO get_frame */
+  for (int start = 300; start < 900; start++) {
+      int free = 1;
+      for (int offset = 0; offset < pages_needed; offset++) {
+          /* CORRECCIÓN: Usamos get_frame(). 
+             Si devuelve != -1 es que hay pagina fisica asignada (ocupado).
+             Si devuelve -1, asumimos libre. */
+          if (get_frame(current_PT, start + offset) != -1) { 
+              free = 0; 
+              start += offset; 
+              break;
+          }
+      }
+      if (free) { 
+          stack_ini = start; 
+          break; 
+      }
+  }
+
+  /* Plan B: Si no encontramos hueco (tabla sucia), forzamos la 500 */
+  if (stack_ini == -1) {
+      for(int k=0; k<pages_needed; k++) del_ss_pag(current_PT, 500+k);
+      stack_ini = 500;
+  }
+
+  uchild_struct->PAG_INICI = stack_ini; 
+  uchild_struct->STACK_PAGES = pages_needed; 
+
+  /* Asignación de memoria física */
+  int logical_page_top = stack_ini + pages_needed - 1;
+  int new_ph_pag = alloc_frame();
+  
+  if (new_ph_pag == -1) { list_add_tail(lhcurrent, &freequeue); return -EAGAIN; }
+  
+  set_ss_pag(current_PT, logical_page_top, new_ph_pag);
+  set_cr3(get_DIR(current())); 
+
+  /* --- PILA USUARIO --- */
+  unsigned int user_stack_base = (logical_page_top + 1) << 12;
+  unsigned int *stack_ptr = (unsigned int *)user_stack_base;
+  
+  stack_ptr -= 1; *stack_ptr = (unsigned int)parameter; 
+  stack_ptr -= 1; *stack_ptr = 0; 
+
+  /* --- PILA KERNEL (Construcción Manual) --- */
+  /* Usamos puntero directo para evitar errores de aritmetica */
+  unsigned long *kstack = (unsigned long *)&uchild->stack[KERNEL_STACK_SIZE];
+  
+  /* Contexto IRET (Hardware) */
+  kstack -= 1; *kstack = 0x2B;              // SS 
+  kstack -= 1; *kstack = (unsigned long)stack_ptr; // ESP 
+  kstack -= 1; *kstack = 0x202;             // EFLAGS
+  kstack -= 1; *kstack = 0x23;              // CS 
+  kstack -= 1; *kstack = (unsigned long)function;  // EIP 
+
+  /* Espacio SAVE_ALL */
+  kstack -= 11; 
+
+  /* Contexto Task Switch */
+  kstack -= 1; *kstack = (unsigned long) ret_from_fork; // RET ADDR
+  kstack -= 1; *kstack = 0; // EBP
+
+  uchild->task.register_esp = (unsigned long) kstack;
+
+  init_stats(&uchild_struct->p_stats);
+  list_add_tail(&uchild_struct->list, &readyqueue);
+
+  return uchild_struct->TID;
+}
+
+
+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

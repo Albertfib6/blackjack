@@ -57,23 +57,14 @@ int __attribute__ ((__section__(".text.main")))
 }
 
 
-/* En sys.c - Sustituye sys_ThreadCreate por esto */
-
-#define FORCE_STACK_PAGE 500
+/* En sys.c - Versión FINAL para entregar */
 
 int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
-  
-  /* DEBUG 1: Inicio */
-  printk("Kernel: ThreadCreate iniciado.\n");
-
   struct task_struct *uchild_struct;
   struct list_head *lhcurrent = NULL;
   union task_union *uchild;
   
-  if (list_empty(&freequeue)) {
-      printk("Kernel: Error - Freequeue vacia (Falta init_sched en main?)\n");
-      return -ENOMEM;
-  }
+  if (list_empty(&freequeue)) return -ENOMEM;
 
   lhcurrent = list_first(&freequeue);
   list_del(lhcurrent);
@@ -87,68 +78,69 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   uchild_struct->PID = current()->PID; 
   uchild_struct->state = ST_READY;
 
-  /* --- ZONA DE LA VERDAD --- */
-  
-  /* FUERZA BRUTA: Usamos la pagina 500 si o si. */
-  int stack_ini = FORCE_STACK_PAGE;
-  int pages_needed = 20;
+  /* 3. Buscar hueco REAL (Rango seguro 300-900) */
+  page_table_entry *current_PT = get_PT(current());
+  int stack_ini = -1;
+  int pages_needed = MAX_USER_STACK_PAGES; // Asegurate que es 20 o similar
+
+  for (int start = 300; start < 900; start++) {
+      int free = 1;
+      for (int offset = 0; offset < pages_needed; offset++) {
+          if (get_frame(current_PT, start + offset) != -1) {
+              free = 0;
+              start += offset; 
+              break;
+          }
+      }
+      if (free) {
+          stack_ini = start;
+          break;
+      }
+  }
+
+  if (stack_ini == -1) {
+      list_add_tail(lhcurrent, &freequeue);
+      return -ENOMEM;
+  }
 
   uchild_struct->PAG_INICI = stack_ini; 
   uchild_struct->STACK_PAGES = pages_needed; 
 
-  /* Asignar memoria física para la CIMA de la pila */
+  /* 4. Asignar memoria física inicial */
   int logical_page_top = stack_ini + pages_needed - 1;
-  
-  /* Aseguramos que la pagina este limpia antes de asignar */
-  page_table_entry *current_PT = get_PT(current());
-  del_ss_pag(current_PT, logical_page_top); 
-
   int new_ph_pag = alloc_frame();
   
   if (new_ph_pag == -1) {
-      printk("Kernel: Error - No hay memoria fisica (alloc_frame fallo)\n");
       list_add_tail(lhcurrent, &freequeue);
       return -EAGAIN;
   }
   
   set_ss_pag(current_PT, logical_page_top, new_ph_pag);
+  set_cr3(get_DIR(current())); /* FLUSH TLB IMPRESCINDIBLE */
 
-  /* CRITICO: Limpiar TLB para que la CPU vea la nueva memoria */
-  set_cr3(get_DIR(current())); 
-
-  /* DEBUG 2: Memoria asignada */
-  printk("Kernel: Pagina asignada y TLB flush hecho.\n");
-
-  /* Preparar Pila de Usuario */
+  /* 5. Preparar Pila de Usuario */
   unsigned int user_stack_base = (logical_page_top + 1) << 12;
   unsigned int *stack_ptr = (unsigned int *)user_stack_base;
   
-  /* PRUEBA DE ESCRITURA: Si esto falla, crashea el sistema */
   stack_ptr -= 1; 
   *stack_ptr = (unsigned int)parameter; 
   
   stack_ptr -= 1; 
-  *stack_ptr = 0; // Return address 0 para provocar fallo controlado si retorna
+  *stack_ptr = 0; // Return address fake
 
-  /* DEBUG 3: Pila de usuario escrita */
-  printk("Kernel: Pila de usuario escrita OK.\n");
-
-  /* Preparar Kernel Stack */
+  /* 6. Preparar Kernel Stack */
   uchild->stack[KERNEL_STACK_SIZE - 2] = (unsigned long)stack_ptr; 
   uchild->stack[KERNEL_STACK_SIZE - 5] = (unsigned long)function;  
 
   unsigned long *ksp = &uchild->stack[KERNEL_STACK_SIZE - 5];
   ksp -= 10; 
-  ksp -= 1; 
-  *ksp = 0; 
-  ksp -= 1; 
-  *ksp = (unsigned long) ret_from_fork; 
+  ksp -= 1; *ksp = 0; 
+  ksp -= 1; *ksp = (unsigned long) ret_from_fork; 
 
   uchild->task.register_esp = (unsigned long) ksp;
 
   init_stats(&uchild_struct->p_stats);
   list_add_tail(&uchild_struct->list, &readyqueue);
 
-  printk("Kernel: Thread encolado. EXITO.\n");
   return uchild_struct->TID;
 }

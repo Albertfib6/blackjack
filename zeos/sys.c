@@ -19,10 +19,8 @@
 
 #define LECTURA 0
 #define ESCRIPTURA 1
-// Definimos el tamaño máximo que podrá crecer la pila y el gap de seguridad
+// Definimos el tamaño máximo que podrá crecer la pila 
 #define MAX_USER_STACK_PAGES 5 
-
-#define FORCE_STACK_PAGE 500
 
 void * get_ebp();
 extern void ret_from_fork();

@@ -168,7 +168,6 @@ int sys_fork(void)
   /* Copy the parent's task struct to child's */
   copy_data(current(), uchild, sizeof(union task_union));
   
-  /* 1. ACTUALIZACIÓN DE IDENTIDAD: Single Thread Process */
   /* El hijo es un proceso nuevo, el hilo actual se convierte en el principal */
   uchild->task.PID = ++next_free_id;
   uchild->task.TID = uchild->task.PID;
@@ -182,8 +181,6 @@ int sys_fork(void)
   page_table_entry *process_PT = get_PT(&uchild->task);
   page_table_entry *parent_PT = get_PT(current());
 
-  /* 2. COPIA DE DATOS GLOBALES (NUM_PAG_DATA) */
-  /* Asumimos que NUM_PAG_DATA cubre la zona de datos estáticos/globales. */
   for (pag=0; pag<NUM_PAG_DATA; pag++)
   {
     new_ph_pag=alloc_frame();
@@ -204,18 +201,14 @@ int sys_fork(void)
     }
   }
 
-  /* 3. COPIA DE LA PILA DEL HILO ACTUAL (Solo esta pila) */
-  /* Debemos iterar sobre las páginas definidas en el PCB del padre actual */
-  /* Si la pila está dentro de NUM_PAG_DATA (hilo main clásico), ya se copió arriba.
-     Si es un thread nuevo, su pila está en PAG_INICI y debemos copiarla explícitamente. */
-  
+  /* COPIA DE LA PILA DEL HILO ACTUAL (Solo esta pila) */
   int start_stack = current()->PAG_INICI;
   int num_stack = current()->STACK_PAGES;
   
   for (i = 0; i < num_stack; i++) {
       int log_page = start_stack + i;
 
-      /* Evitar doble copia si la pila cae dentro de NUM_PAG_DATA (caso main thread clásico) */
+      /* Evitar doble copia si la pila cae dentro de NUM_PAG_DATA */
       if (log_page >= PAG_LOG_INIT_DATA && log_page < PAG_LOG_INIT_DATA + NUM_PAG_DATA) {
           continue; 
       }
@@ -225,26 +218,19 @@ int sys_fork(void)
           new_ph_pag = alloc_frame();
           if (new_ph_pag != -1) {
               set_ss_pag(process_PT, log_page, new_ph_pag);
-              
+         
               /* Copia de memoria: Mapeamos temp en el padre para copiar */
-              /* Nota: ZeOS simplificado suele usar mapeo temporal o copia directa si es kernel space */
-              /* Asumiendo mecanismo estándar de copia de ZeOS: */
               int temp_page = NUM_PAG_KERNEL + NUM_PAG_CODE + NUM_PAG_DATA; // Una pág libre
               set_ss_pag(parent_PT, temp_page, get_frame(process_PT, log_page));
-              set_cr3(get_DIR(current())); // Flush TLB para ver el mapeo temporal
-
               copy_data((void*)(log_page<<12), (void*)(temp_page<<12), PAGE_SIZE);
-              
               del_ss_pag(parent_PT, temp_page);
               set_cr3(get_DIR(current())); // Flush TLB
           } else {
-              /* ERROR: No hay memoria para copiar la pila completa. */
+              /* error: No hay memoria para copiar la pila completa. */
               
-              /* 1. Liberar las páginas de PILA que ya habíamos asignado en este bucle */
-              /* Iteramos desde 0 hasta i (exclusivo) para deshacer */
+              /* Liberar las páginas de PILA que ya habíamos asignado en este bucle */
               for (int k = 0; k < i; k++) {
                   int undo_log_page = start_stack + k;
-                  
                   /* Solo liberamos si realmente asignamos un frame (verificamos en el hijo) */
                   if (get_frame(process_PT, undo_log_page) != -1) {
                       free_frame(get_frame(process_PT, undo_log_page));
@@ -252,16 +238,16 @@ int sys_fork(void)
                   }
               }
 
-              /* 2. Liberar las páginas de DATOS GLOBALES asignadas en el paso anterior */
+              /* Liberar las páginas de DATOS GLOBALES asignadas en el paso anterior */
               for (int k = 0; k < NUM_PAG_DATA; k++) {
                   free_frame(get_frame(process_PT, PAG_LOG_INIT_DATA + k));
                   del_ss_pag(process_PT, PAG_LOG_INIT_DATA + k);
               }
 
-              /* 3. Liberar el task_struct (devolver a la cola de libres) */
+              /* Liberar el task_struct (devolver a la cola de libres) */
               list_add_tail(lhcurrent, &freequeue);
 
-              /* 4. Retornar código de error */
+              /* Retornar código de error */
               return -EAGAIN;
           }
       }
@@ -278,7 +264,6 @@ int sys_fork(void)
   }
   
   /* Copy parent's DATA content to child. */
-  /* Esto copia el contenido de los frames asignados en el paso 2 */
   for (pag=NUM_PAG_KERNEL+NUM_PAG_CODE; pag<NUM_PAG_KERNEL+NUM_PAG_CODE+NUM_PAG_DATA; pag++)
   {
     set_ss_pag(parent_PT, pag+NUM_PAG_DATA, get_frame(process_PT, pag));
@@ -290,7 +275,7 @@ int sys_fork(void)
   set_cr3(get_DIR(current()));
 
   /* Configuración del Kernel Stack para el Context Switch (ret_from_fork) */
-  int register_ebp;   /* frame pointer */
+  int register_ebp;  
   register_ebp = (int) get_ebp();
   register_ebp=(register_ebp - (int)current()) + (int)(uchild);
 
@@ -417,18 +402,15 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   uchild_struct->PID = current()->PID; 
   uchild_struct->state = ST_READY;
 
-  /* --- BÚSQUEDA DE MEMORIA SEGURA --- */
   page_table_entry *current_PT = get_PT(current());
   int stack_ini = -1;
   int pages_needed = MAX_USER_STACK_PAGES;
 
-  /* Buscamos hueco usando SOLO get_frame */
+  /* Buscamos hueco en memoria para almacenar la pila del thread nuevo */
   for (int start = PAG_LOG_INIT_DATA + NUM_PAG_DATA*2; start < TOTAL_PAGES; start++) {
       int free = 1;
       for (int offset = 0; offset < pages_needed; offset++) {
-          /* CORRECCIÓN: Usamos get_frame(). 
-             Si devuelve != -1 es que hay pagina fisica asignada (ocupado).
-             Si devuelve -1, asumimos libre. */
+          /* Comprobamos que la página no este mapeada a una física */
           if (current_PT[start+offset].bits.present) { 
               free = 0; 
               start += offset; 
@@ -441,7 +423,7 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
       }
   }
 
-  /* Plan B: Si no encontramos hueco (tabla sucia), forzamos la 500 */
+  /* Si no encontramos hueco devolvemos error de memoria */
   if (stack_ini == -1) {
       list_add_tail(lhcurrent, &freequeue);
       return -ENOMEM;
@@ -459,28 +441,22 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   set_ss_pag(current_PT, logical_page_top, new_ph_pag);
   set_cr3(get_DIR(current())); 
 
-  /* --- PILA USUARIO --- */
+  /* Pila de usuario */
   unsigned int user_stack_base = (logical_page_top + 1) << 12;
   unsigned int *stack_ptr = (unsigned int *)user_stack_base;
   
   stack_ptr -= 1; *stack_ptr = (unsigned int)parameter; 
   stack_ptr -= 1; *stack_ptr = 0; 
 
-  /* --- PILA KERNEL (Construcción Manual) --- */
-  /* Usamos puntero directo para evitar errores de aritmetica */
+  /* Pila de sistema */
   unsigned long *kstack = (unsigned long *)&uchild->stack[KERNEL_STACK_SIZE];
   
-  /* Contexto IRET (Hardware) */
+  /* Contexto HW */
   kstack -= 1;              // SS 
-  kstack -= 1; *kstack = (unsigned long)stack_ptr; // ESP 
+  kstack -= 1; *kstack = (unsigned long)stack_ptr; // ESP, puntero a la cima de usuario mencionada antes
   kstack -= 1;            // EFLAGS
   kstack -= 1;              // CS 
-  kstack -= 1; *kstack = (unsigned long)function;  // EIP 
-
-  /* Espacio SAVE_ALL */
-  kstack -= 11; 
-
-
+  kstack -= 1; *kstack = (unsigned long)function;  // EIP, ponemos la direccion de la funcion que queremos que pase a ejecutar el nuevo thread
 
   uchild->task.register_esp = (unsigned long)&uchild->stack[KERNEL_STACK_SIZE-18];
 
@@ -488,18 +464,17 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   init_stats(&uchild_struct->p_stats);
   list_add_tail(&uchild_struct->list, &readyqueue);
 
-  return uchild_struct->TID;
+  return uchild_struct->TID; /* Devolvemos el id del nuevo thread */
 }
 
 
 
 void sys_ThreadExit() {
-   // Obtener el thread actual; se asume que current() devuelve un puntero a struct task_struct.
+
     struct task_struct *current_task = current();
     page_table_entry *current_PT = get_PT(current_task);
 
-    // Recorremos los STACK_PAGES asignados a la pila. La información sobre el inicio
-    // y la cantidad de páginas debe haberse guardado al crearlo.
+    // Recorremos los STACK_PAGES asignados a la pila. 
     for (int i = 0; i < current_task->STACK_PAGES; i++) {
         int page_num = current_task->PAG_INICI + i;
         int frame = get_frame(current_PT, page_num);
@@ -511,10 +486,7 @@ void sys_ThreadExit() {
     
     current_task->TID = -1;
 
-    //list_del(&(current_task->list));
-
     list_add_tail(&(current_task->list), &freequeue);  
-    // 4. Llamar al scheduler para cambiar de contexto. Esta llamada no debería retornar.
     sched_next_rr();
 }
 

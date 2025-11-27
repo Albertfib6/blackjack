@@ -128,7 +128,7 @@ ENTRY(page_fault_handler)
     pushl %eax           // 2ndo Argumento: fault_address
     
     /* El Error Code fue empujado por la CPU automáticamente antes de saltar aquí.
-       Está en la pila, pero "enterrado" bajo los registros de SAVE_ALL.
+       Está en la pila, pero "enterrado" bajo los registros de SAVE_ALL */
 
     pushl 0x30(%esp)     // 1r Argumento: error_code 
 
@@ -152,3 +152,4 @@ ENTRY(page_fault_handler)
     iret
 
     
+

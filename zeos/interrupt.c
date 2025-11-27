@@ -55,10 +55,9 @@ void page_fault_routine(int error_code, unsigned int fault_addr) {
 
     /* 
        Comprobamos si la dirección del fallo (fault_addr) cae dentro 
-       del "hueco" reservado para la pila del thread.
+       del hueco reservado para la pila del thread.
     */
 
-    // Convertimos dirección lineal a número de página lógica
     unsigned int logical_page = fault_addr >> 12;
 
     // Rango válido: Desde PAG_INICI hasta (PAG_INICI + STACK_PAGES)
@@ -86,8 +85,7 @@ void page_fault_routine(int error_code, unsigned int fault_addr) {
         }
     }
 
-    // Si llegamos aquí, no fue un crecimiento de pila válido.
-    // Fue un acceso ilegal real (Segmentation Fault).
+    // Si llegamos aquí, no fue un crecimiento de pila válido, fue un acceso ilegal real 
     while(1);
 }
 
@@ -166,5 +164,6 @@ void idt_init()
 
   set_idt_reg(&idtR);
 }
+
 
 

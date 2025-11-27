@@ -53,7 +53,7 @@ void page_fault_routine(int error_code, unsigned int fault_addr) {
     struct task_struct *t = current();
     page_table_entry *PT = get_PT(t);
 
-    /* LOGICA DE DYNAMIC STACK GROWTH 
+    /* 
        Comprobamos si la dirección del fallo (fault_addr) cae dentro 
        del "hueco" reservado para la pila del thread.
     */
@@ -66,7 +66,7 @@ void page_fault_routine(int error_code, unsigned int fault_addr) {
         logical_page < (t->PAG_INICI + t->STACK_PAGES)) {
         
         // Es un acceso a la zona reservada de pila.
-        // Comprobamos que no haya ya memoria asignada (sanity check)
+        // Comprobamos que no haya ya memoria asignada 
         if (get_frame(PT, logical_page) == -1) {
             
             // Asignar nueva página física
@@ -76,12 +76,9 @@ void page_fault_routine(int error_code, unsigned int fault_addr) {
                 // Mapear la página
                 set_ss_pag(PT, logical_page, new_frame);
                 
-                // Muy Importante: Como hemos modificado la tabla de páginas,
-                // debemos invalidar la TLB para esa dirección o recargar CR3,
-                // de lo contrario la CPU seguirá pensando que la página no existe.
-                set_cr3(get_DIR(t)); 
+                set_cr3(get_DIR(t)); //Sincronizar TLB
                 
-                return; // Volvemos a ensamblador -> IRET -> Re-ejecutar PUSH
+                return; 
             } else {
                 // No queda memoria física en el sistema
                 while(1);
@@ -169,4 +166,5 @@ void idt_init()
 
   set_idt_reg(&idtR);
 }
+
 

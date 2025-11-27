@@ -61,7 +61,7 @@ int __attribute__ ((__section__(".text.main")))
     }
 
 
-    yield();
+    //yield();
     /* Hacemos un bucle para esperar y no terminar el proceso padre inmediatamente.
        En un caso real usarías algún mecanismo de sincronización, 
        pero un while largo sirve para ver el resultado en pantalla.

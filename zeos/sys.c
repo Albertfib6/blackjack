@@ -20,7 +20,7 @@
 #define LECTURA 0
 #define ESCRIPTURA 1
 // Definimos el tamaño máximo que podrá crecer la pila y el gap de seguridad
-#define MAX_USER_STACK_PAGES 20 
+#define MAX_USER_STACK_PAGES 5 
 
 #define FORCE_STACK_PAGE 500
 
@@ -423,13 +423,13 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   int pages_needed = MAX_USER_STACK_PAGES;
 
   /* Buscamos hueco usando SOLO get_frame */
-  for (int start = 300; start < 900; start++) {
+  for (int start = PAG_LOG_INIT_DATA + NUM_PAG_DATA*2; start < TOTAL_PAGES; start++) {
       int free = 1;
       for (int offset = 0; offset < pages_needed; offset++) {
           /* CORRECCIÓN: Usamos get_frame(). 
              Si devuelve != -1 es que hay pagina fisica asignada (ocupado).
              Si devuelve -1, asumimos libre. */
-          if (get_frame(current_PT, start + offset) != -1) { 
+          if (current_PT[start+offset].bits.present) { 
               free = 0; 
               start += offset; 
               break;
@@ -443,9 +443,9 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
 
   /* Plan B: Si no encontramos hueco (tabla sucia), forzamos la 500 */
   if (stack_ini == -1) {
-      for(int k=0; k<pages_needed; k++) del_ss_pag(current_PT, 500+k);
-      stack_ini = 500;
-  }
+      list_add_tail(lhcurrent, &freequeue);
+      return -ENOMEM;
+  } 
 
   uchild_struct->PAG_INICI = stack_ini; 
   uchild_struct->STACK_PAGES = pages_needed; 
@@ -471,26 +471,27 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   unsigned long *kstack = (unsigned long *)&uchild->stack[KERNEL_STACK_SIZE];
   
   /* Contexto IRET (Hardware) */
-  kstack -= 1; *kstack = 0x2B;              // SS 
+  kstack -= 1;              // SS 
   kstack -= 1; *kstack = (unsigned long)stack_ptr; // ESP 
-  kstack -= 1; *kstack = 0x202;             // EFLAGS
-  kstack -= 1; *kstack = 0x23;              // CS 
+  kstack -= 1;            // EFLAGS
+  kstack -= 1;              // CS 
   kstack -= 1; *kstack = (unsigned long)function;  // EIP 
 
   /* Espacio SAVE_ALL */
   kstack -= 11; 
 
-  /* Contexto Task Switch */
-  kstack -= 1; *kstack = (unsigned long) ret_from_fork; // RET ADDR
-  kstack -= 1; *kstack = 0; // EBP
 
-  uchild->task.register_esp = (unsigned long) kstack;
+
+  uchild->task.register_esp = (unsigned long)&uchild->stack[KERNEL_STACK_SIZE-18];
+
 
   init_stats(&uchild_struct->p_stats);
   list_add_tail(&uchild_struct->list, &readyqueue);
 
   return uchild_struct->TID;
 }
+
+
 
 void sys_ThreadExit() {
    // Obtener el thread actual; se asume que current() devuelve un puntero a struct task_struct.

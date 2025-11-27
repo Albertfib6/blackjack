@@ -135,12 +135,12 @@ ENTRY(page_fault_handler)
     call page_fault_routine
 
     /* 4. Limpiar argumentos de la llamada 
-    addl $8, %esp
+    addl $8, %esp */
 
     RESTORE_ALL
 
     
-    /* La excepción 14 empuja un código de error en la pila. 
+    /* La excepción 14 empuja un código de error en la pila. */
        
     addl $4, %esp 
 
@@ -152,4 +152,5 @@ ENTRY(page_fault_handler)
     iret
 
     
+
 

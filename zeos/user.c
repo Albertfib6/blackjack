@@ -1,6 +1,7 @@
 #include <libc.h>
 
 char buff[24];
+char buff2[24];
 
 int pid;
 
@@ -9,7 +10,12 @@ int pid;
 void funcion_thread_pesado(void *parametro) {
     int id = (int)parametro;
     
+    itoa(id, buff2);
+    write(1, "Valor de ID: ", 13);
+    write(1, buff2, strlen(buff2));
+    write(1, "\n", 1);
     write(1, "Thread iniciado. Intentando romper la pila...\n", 46);
+
 
     /* PRUEBA DE FUEGO: Crecimiento de Pila
        El enunciado dice que la pila inicial es 1 página (4096 bytes).

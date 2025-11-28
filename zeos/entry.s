@@ -70,21 +70,17 @@ sysenter_fin:
 
 
 
-
     movl %cr2, %eax
     pushl %eax
 
 
 
 
-
     pushl 0x30(%esp)
-
 
     call page_fault_routine
 
 
-    addl $8, %esp
 
 
     popl %ebx; popl %ecx; popl %edx; popl %esi; popl %edi; popl %ebp; popl %eax; popl %ds; popl %es; popl %fs; popl %gs;
@@ -93,7 +89,6 @@ sysenter_fin:
 
 
     addl $4, %esp
-
 
     iret
 

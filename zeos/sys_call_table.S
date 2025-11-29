@@ -31,7 +31,7 @@ ENTRY (sys_call_table)
 	.long sys_ni_syscall	//26
 	.long sys_ThreadCreate	//27
 	.long sys_ThreadExit	//28
-	.long sys_ni_syscall	//29
+	.long sys_KeyboardEvent	//29
 	.long sys_ni_syscall	//30
 	.long sys_ni_syscall	//31
 	.long sys_ni_syscall	//32

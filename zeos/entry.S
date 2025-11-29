@@ -147,10 +147,18 @@ ENTRY(page_fault_handler)
     iret
 
   
-  ENTRY(ret_from_fork)
+ENTRY(ret_from_fork)
     RESTORE_ALL
     iret
 
+ENTRY(handler_resume_execution)
+    SAVE_ALL                    // Guardar registros (contexto software)
     
+    call sys_resume_execution   // Llamar a la lógica de restauración en C
+                                // (Esta función modificará el EIP/ESP guardados en la pila)
+    RESTORE_ALL                 // Restaurar registros
+    iret                        // Volver a usuario (usará el EIP/ESP modificados)
+    
+
 
 

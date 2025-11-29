@@ -138,3 +138,46 @@ ENTRY(KeyboardEvent)
 	ret
 
 
+
+/* * void keyboard_wrapper(void (*func)(char, int), char key, int pressed);
+ *
+ * Stack Layout al entrar (construido por el Kernel):
+ * [EBP + 16] = pressed (int)
+ * [EBP + 12] = key (char/int)
+ * [EBP + 8]  = func (puntero a función)
+ * [EBP + 4]  = Retorno (Dummy 0)
+ * [EBP]      = EBP Guardado
+ */
+
+ENTRY(keyboard_wrapper)
+    /* 1. Prólogo estándar */
+    pushl %ebp
+    movl %esp, %ebp
+
+    /* 2. Preparar los argumentos para llamar a la función del usuario 'func' */
+    /* Prototipo: func(char key, int pressed) */
+    /* Convención C (cdecl): Empujar argumentos de derecha a izquierda */
+
+    /* Push 'pressed' (2º argumento) */
+    pushl 0x10(%ebp)
+
+    /* Push 'key' (1º argumento) */
+    pushl 0xC(%ebp)
+
+    /* 3. Obtener el puntero a la función y llamar */
+    movl 0x8(%ebp), %eax   ; Cargar la dirección de 'func' en EAX
+    call *%eax             ; Llamada indirecta a la función
+
+    /* 4. Limpiar la pila después de la llamada */
+    /* Hemos empujado 2 argumentos de 4 bytes = 8 bytes */
+    addl $8, %esp
+
+    /* 5. Restaurar la ejecución del hilo original */
+    /* Esta interrupción hace que el Kernel restaure el EIP/ESP guardados */
+    int $0x2b
+
+    /* 6. Epílogo (Código inalcanzable, pero por corrección) */
+    popl %ebp
+    ret
+
+

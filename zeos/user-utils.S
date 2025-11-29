@@ -142,11 +142,11 @@ ENTRY(KeyboardEvent)
 /* * void keyboard_wrapper(void (*func)(char, int), char key, int pressed);
  *
  * Stack Layout al entrar (construido por el Kernel):
- * [EBP + 16] = pressed (int)
- * [EBP + 12] = key (char/int)
- * [EBP + 8]  = func (puntero a función)
- * [EBP + 4]  = Retorno (Dummy 0)
  * [EBP]      = EBP Guardado
+ * [EBP + 4]  = Retorno (Dummy 0)
+ * [EBP + 8]  = func (puntero a función)
+ * [EBP + 12] = key (char/int)
+ * [EBP + 16] = pressed (int)
  */
 
 ENTRY(keyboard_wrapper)

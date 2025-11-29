@@ -96,27 +96,56 @@ ENTRY(keyboard_handler)
       iret;
 
 ENTRY(system_call_handler)
-	push $__USER_DS
-	push %ebp
-	pushfl
-	push $__USER_CS
-	push 4(%ebp)
-	SAVE_ALL	// What about arg 6?
-	cmpl $0, %eax
-	jl sysenter_err
-	cmpl $MAX_SYSCALL, %eax
-	jg sysenter_err
-	call *sys_call_table(, %eax, 0x04)
-	jmp sysenter_fin
+    push $__USER_DS
+    push %ebp
+    pushfl
+    push $__USER_CS
+    push 4(%ebp)
+    SAVE_ALL    // Save registers
+
+    /* --- INICIO MODIFICACIÓN: Chequeo de Bloqueo --- */
+    
+    /* 1. Guardamos EAX (número de syscall) porque 'call' lo va a machacar */
+    pushl %eax
+    
+    /* 2. Preguntamos si estamos dentro del handler de teclado */
+    call is_in_keyboard_handler
+    
+    /* 3. Comprobamos el resultado (en EAX) */
+    cmpl $0, %eax
+    jne sysenter_einprogress /* Si no es 0, estamos bloqueados -> Salta */
+    
+    /* 4. Si es 0 (no bloqueado), restauramos el número de syscall y seguimos */
+    popl %eax
+    
+    /* --- FIN MODIFICACIÓN --- */
+
+    cmpl $0, %eax
+    jl sysenter_err
+    cmpl $MAX_SYSCALL, %eax
+    jg sysenter_err
+    call *sys_call_table(, %eax, 0x04)
+    jmp sysenter_fin
+
 sysenter_err:
-	movl $-ENOSYS, %eax
+    movl $-ENOSYS, %eax
+    jmp sysenter_fin
+
+/* Nueva etiqueta para el error de progreso */
+sysenter_einprogress:
+    /* Necesitamos limpiar la pila porque hicimos un 'pushl %eax' extra antes del call */
+    addl $4, %esp 
+    movl $-EINPROGRESS, %eax
+    /* Dejamos que caiga ("fallthrough") a sysenter_fin */
+
 sysenter_fin:
-	movl %eax, 0x18(%esp)
-	RESTORE_ALL
-	movl (%esp), %edx // Return address
-	movl 12(%esp), %ecx	      // User stack address
-	sti
-	sysexit
+    /* Sobrescribimos el EAX guardado en la pila con el valor de retorno */
+    movl %eax, 0x18(%esp) 
+    RESTORE_ALL
+    movl (%esp), %edx   // Return address
+    movl 12(%esp), %ecx // User stack address
+    sti
+    sysexit
 
 ENTRY(page_fault_handler)
 
@@ -159,6 +188,7 @@ ENTRY(handler_resume_execution)
     RESTORE_ALL                 // Restaurar registros
     iret                        // Volver a usuario (usará el EIP/ESP modificados)
     
+
 
 
 

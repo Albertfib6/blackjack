@@ -6,6 +6,7 @@
 #include <segment.h>
 #include <hardware.h>
 #include <io.h>
+#include <mm.h>
 
 #include <sched.h>
 
@@ -32,45 +33,22 @@ char char_map[] =
 };
 
 int zeos_ticks = 0;
-extern struct list_head blockedqueue;
 
 void clock_routine()
 {
-  zeos_show_clock();
+  //zeos_show_clock();
   zeos_ticks ++;
-
-  struct list_head *pos, *n;
-  struct task_struct *task;
-
-  list_for_each_safe(pos, n, &blockedqueue) 
-  {
-    task = list_entry(pos, struct task_struct, list);
-    if (task->wake_up_time == zeos_ticks) 
-    { 
-      list_del(&task->list);
-      task->state = ST_READY;
-      list_add_tail(&(task->list), &readyqueue);
-    }
-  }
   
   schedule();
 }
 
-#define NUM_KEYS 128
-extern char key_state[NUM_KEYS];  // Array global que guarda el estado de las teclas
-
 // void keyboard_routine()
 // {
 //   unsigned char c = inb(0x60);
-//   unsigned char keycode = c & 0x7F;  // Ignoramos el bit de "liberación"
-
-//   if (c&0x80) {
-//     key_state[keycode] = 0;
-//     //printc_xy(0, 0, char_map[c&0x7f]);
-//   }
-//   else key_state[keycode] = 1;
-
+  
+//   if (c&0x80) printc_xy(0, 0, char_map[c&0x7f]);
 // }
+
 
 void keyboard_routine()
 {
@@ -80,10 +58,6 @@ void keyboard_routine()
   // 1. Determinar si es Press (1) o Release (0)
   // En tu código: (c & 0x80) es release, else es press.
   int pressed = (c & 0x80) ? 0 : 1; 
-
-  // Actualizamos el array de estado global (opcional, pero útil para el sistema)
-  if (pressed) key_state[keycode] = 1;
-  else key_state[keycode] = 0;
 
   struct task_struct *t = current();
 
@@ -148,6 +122,46 @@ void keyboard_routine()
   }
 }
 
+void page_fault_routine(int error_code, unsigned int fault_addr) {
+    struct task_struct *t = current();
+    page_table_entry *PT = get_PT(t);
+
+    /* 
+       Comprobamos si la dirección del fallo (fault_addr) cae dentro 
+       del hueco reservado para la pila del thread.
+    */
+
+    unsigned int logical_page = fault_addr >> 12;
+
+    // Rango válido: Desde PAG_INICI hasta (PAG_INICI + STACK_PAGES)
+    if (logical_page >= t->PAG_INICI && 
+        logical_page < (t->PAG_INICI + t->STACK_PAGES)) {
+        
+        // Es un acceso a la zona reservada de pila.
+        // Comprobamos que no haya ya memoria asignada 
+        if (get_frame(PT, logical_page) == -1) {
+            
+            // Asignar nueva página física
+            int new_frame = alloc_frame();
+            
+            if (new_frame != -1) {
+                // Mapear la página
+                set_ss_pag(PT, logical_page, new_frame);
+                
+                set_cr3(get_DIR(t)); //Sincronizar TLB
+                
+                return; 
+            } else {
+                // No queda memoria física en el sistema
+                while(1);
+            }
+        }
+    }
+
+    // Si llegamos aquí, no fue un crecimiento de pila válido, fue un acceso ilegal real 
+    while(1);
+}
+
 void setInterruptHandler(int vector, void (*handler)(), int maxAccessibleFromPL)
 {
   /***********************************************************************/
@@ -195,6 +209,7 @@ void setTrapHandler(int vector, void (*handler)(), int maxAccessibleFromPL)
 void clock_handler();
 void keyboard_handler();
 void system_call_handler();
+void page_fault_handler();
 
 void setMSR(unsigned long msr_number, unsigned long high, unsigned long low);
 
@@ -205,20 +220,23 @@ void setSysenter()
   setMSR(0x176, 0, (unsigned long)system_call_handler);
 }
 
-void setIdt()
+void idt_init()
 {
   /* Program interrups/exception service routines */
   idtR.base  = (DWord)idt;
   idtR.limit = IDT_ENTRIES * sizeof(Gate) - 1;
   
-  set_handlers();
+  //set_handlers();
 
   /* ADD INITIALIZATION CODE FOR INTERRUPT VECTOR */
   setInterruptHandler(32, clock_handler, 0);
   setInterruptHandler(33, keyboard_handler, 0);
+  setInterruptHandler(14, page_fault_handler, 0);
 
   setSysenter();
 
   set_idt_reg(&idtR);
 }
+
+
 

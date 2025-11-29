@@ -14,6 +14,10 @@
 #define NR_TASKS      10
 #define KERNEL_STACK_SIZE	1024
 
+// Definimos una dirección lógica fija para la Pila Auxiliar (ej. después del código/datos)
+#define PAG_LOG_INIT_AUX_STACK  (PAG_LOG_INIT_DATA + NUM_PAG_DATA + 50) // Lejos de la pila normal
+#define AUX_STACK_SIZE 1 // 1 página
+
 enum state_t { ST_RUN, ST_READY, ST_BLOCKED };
 
 struct task_struct {
@@ -27,6 +31,11 @@ struct task_struct {
   struct stats p_stats;		/* Process stats */ 
   int PAG_INICI; /* Cima de la pila*/
   int STACK_PAGES;
+/* Soporte KeyboardEvent */
+  void (*keyboard_func)(char, int); // Puntero a la función del usuario
+  unsigned long saved_eip;          // Para guardar dónde estaba el thread
+  unsigned long saved_esp;          // Para guardar la pila original del thread
+  int in_keyboard_handler;          // Flag: 1 si está ejecutando el evento, 0 si no
 };
 
 union task_union {

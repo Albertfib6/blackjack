@@ -488,3 +488,25 @@ void sys_ThreadExit() {
     sched_next_rr();
 }
 
+int sys_KeyboardEvent(void (*func)(char, int)) {
+    struct task_struct *t = current();
+    
+    // 1. Registrar la función
+    t->keyboard_func = func;
+    t->in_keyboard_handler = 0;
+
+    // 2. Crear la Pila Auxiliar si no existe
+    // Comprobamos si la página lógica ya tiene frame asignado
+    page_table_entry *PT = get_PT(t);
+    if (get_frame(PT, PAG_LOG_INIT_AUX_STACK) == -1) {
+        int new_frame = alloc_frame();
+        if (new_frame == -1) return -ENOMEM;
+        
+        set_ss_pag(PT, PAG_LOG_INIT_AUX_STACK, new_frame);
+        // No necesitamos flush de TLB inmediato si no la usamos ya, 
+        // pero por seguridad se puede hacer set_cr3
+    }
+
+    return 0;
+}
+

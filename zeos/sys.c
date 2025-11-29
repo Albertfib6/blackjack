@@ -505,6 +505,7 @@ int sys_KeyboardEvent(void (*func)(char, int)) {
         set_ss_pag(PT, PAG_LOG_INIT_AUX_STACK, new_frame);
         // No necesitamos flush de TLB inmediato si no la usamos ya, 
         // pero por seguridad se puede hacer set_cr3
+		set_cr3(get_DIR(current())); 
     }
 
     return 0;

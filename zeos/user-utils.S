@@ -165,8 +165,8 @@ ENTRY(keyboard_wrapper)
     pushl 0xC(%ebp)
 
     /* 3. Obtener el puntero a la función y llamar */
-    movl 0x8(%ebp), %eax   ; Cargar la dirección de 'func' en EAX
-    call *%eax             ; Llamada indirecta a la función
+    movl 0x8(%ebp), %eax   // Cargar la dirección de 'func' en EAX
+    call *%eax             // Llamada indirecta a la función
 
     /* 4. Limpiar la pila después de la llamada */
     /* Hemos empujado 2 argumentos de 4 bytes = 8 bytes */

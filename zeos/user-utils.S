@@ -124,3 +124,17 @@ ENTRY(ThreadCreate)
  	popl %ebp
  	ret
 
+ENTRY(KeyboardEvent)
+	pushl %ebp
+	movl %esp, %ebp
+	pushl %ebx;  // Save EBX, ESI and EDI if modified
+	movl $29, %eax
+	movl 0x8(%ebp), %ebx;	//func
+	call syscall_sysenter
+	popl %ebx
+	test %eax, %eax
+	js nok	// if (eax < 0) -> 
+	popl %ebp
+	ret
+
+

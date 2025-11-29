@@ -49,6 +49,7 @@ void clock_routine()
 //   if (c&0x80) printc_xy(0, 0, char_map[c&0x7f]);
 // }
 
+void keyboard_wrapper();
 
 void keyboard_routine()
 {
@@ -107,7 +108,7 @@ void keyboard_routine()
       // Engañamos al IRET. Le decimos: "No vuelvas donde estabas.
       // Vuelve a 'libc_keyboard_wrapper' usando la pila auxiliar".
       
-      kernel_stack[-5] = (unsigned long)libc_keyboard_wrapper; // Nuevo EIP
+      kernel_stack[-5] = (unsigned long)keyboard_wrapper; // Nuevo EIP
       kernel_stack[-2] = (unsigned long)user_stack_ptr;        // Nuevo ESP
 
       // FIN: Al terminar esta función, se ejecuta el epílogo de la interrupción 
@@ -237,6 +238,7 @@ void idt_init()
 
   set_idt_reg(&idtR);
 }
+
 
 
 

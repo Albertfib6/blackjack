@@ -510,3 +510,28 @@ int sys_KeyboardEvent(void (*func)(char, int)) {
     return 0;
 }
 
+int sys_resume_execution() {
+    struct task_struct *t = current();
+
+    // Solo hacemos algo si venimos de un evento de teclado
+    if (t->in_keyboard_handler == 1) {
+        
+        // --- RESTAURAR CONTEXTO ORIGINAL ---
+        
+        // Necesitamos acceder a la pila del kernel donde se guardó el estado 
+        // al entrar en ESTA syscall (int 0x2b)
+        unsigned long *kernel_stack = (unsigned long *)&t->stack[KERNEL_STACK_SIZE];
+        
+        // Restauramos el EIP y ESP que guardamos en keyboard_routine
+        kernel_stack[-5] = t->saved_eip;
+        kernel_stack[-2] = t->saved_esp;
+        
+        // Desactivamos el flag
+        t->in_keyboard_handler = 0;
+        
+        // Al hacer IRET desde esta syscall, la CPU volverá 
+        // exactamente donde estaba el thread antes de pulsar la tecla.
+    }
+    
+    return 0;
+}

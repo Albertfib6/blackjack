@@ -211,6 +211,7 @@ void clock_handler();
 void keyboard_handler();
 void system_call_handler();
 void page_fault_handler();
+void handler_resume_execution();
 
 void setMSR(unsigned long msr_number, unsigned long high, unsigned long low);
 
@@ -233,11 +234,13 @@ void idt_init()
   setInterruptHandler(32, clock_handler, 0);
   setInterruptHandler(33, keyboard_handler, 0);
   setInterruptHandler(14, page_fault_handler, 0);
+  setInterruptHandler(0x2b, handler_resume_execution, 3);
 
   setSysenter();
 
   set_idt_reg(&idtR);
 }
+
 
 
 

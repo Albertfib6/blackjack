@@ -535,3 +535,7 @@ int sys_resume_execution() {
     
     return 0;
 }
+
+int is_in_keyboard_handler() {
+    return current()->in_keyboard_handler;
+}

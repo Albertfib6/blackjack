@@ -5,6 +5,11 @@ char buff2[24];
 
 int pid;
 
+volatile int syscalls_bloqueadas = 0;
+volatile int ultima_tecla = 0;
+volatile int teclas_pulsadas = 0;
+
+#define EINPROGRESS 115
 
 /* Función para probar la pila profunda */
 void funcion_thread_pesado(void *parametro) {
@@ -41,6 +46,29 @@ void funcion_thread_pesado(void *parametro) {
     ThreadExit();
 }
 
+void handler_teclado(char key, int pressed) {
+    
+    /* Solo nos interesa cuando se pulsa (pressed=1), no cuando se suelta */
+    if (pressed) {
+        
+        /* 1. PRUEBA DE BLOQUEO DE SYSCALLS 
+           Intentamos escribir por pantalla. ESTO DEBE FALLAR. */
+        int ret = write(1, "X", 1);
+        
+        /* Si falla con el error correcto, sumamos al contador */
+        /* Nota: write devuelve -1 en error, y el error real está en errno (o eax negativo si es raw) */
+        /* Asumimos wrapper estándar que pone errno. Si es raw syscall, ret será -115 */
+        
+        if (ret < 0 && errno == EINPROGRESS) {
+            syscalls_bloqueadas++;
+        }
+        
+        /* 2. REGISTRO DEL EVENTO */
+        ultima_tecla = (int)key;
+        teclas_pulsadas++;
+    }
+}
+
 
 int __attribute__ ((__section__(".text.main")))
   main(void)
@@ -67,16 +95,54 @@ int __attribute__ ((__section__(".text.main")))
     }
 
 
-    //yield();
-    /* Hacemos un bucle para esperar y no terminar el proceso padre inmediatamente.
-       En un caso real usarías algún mecanismo de sincronización, 
-       pero un while largo sirve para ver el resultado en pantalla.
-    */
-    long i;
-    for (i = 0; i < 5; i++) yield(); 
+   /* ESPERA SEGURA:
+       Usamos un bucle largo en lugar de pocos yields para dar tiempo de sobra
+       al hilo (creación + page fault + impresión) antes de seguir. */
+    int i;
+    for (i = 0; i < 20000000; i++); 
 
     write(1, "Test finalizado.\n", 17);
 
+    write(1, "Test 2: Activando Teclado. PULSA TECLAS.\n", 41);
 
-  while(1) { }
+    /* Registramos el handler */
+    if (KeyboardEvent(handler_teclado) < 0) {
+        write(1, "Error syscall KeyboardEvent\n", 28);
+        while(1);
+    }
+
+    int local_teclas = 0;
+ 
+    while(1) { 
+        /* Detectamos si el handler ha modificado las variables */
+        if (local_teclas != teclas_pulsadas) {
+            
+            /* Actualizamos estado local */
+            local_teclas = teclas_pulsadas;
+            
+            /* Preparamos el mensaje */
+            write(1, "Evento detectado! -> ", 21);
+            
+            /* Imprimimos tecla */
+            char k = (char)ultima_tecla;
+            if (k >= ' ' && k <= '~') { // Si es imprimible
+                write(1, "Tecla: '", 8);
+                write(1, &k, 1);
+                write(1, "' ", 2);
+            } else {
+                write(1, "Tecla: [Special] ", 17);
+            }
+
+            /* Imprimimos estado del bloqueo */
+            write(1, "| Bloqueos exitosos: ", 21);
+            itoa(syscalls_bloqueadas, buff);
+            write(1, buff, strlen(buff));
+            
+            write(1, "\n", 1);
+        }
+
+        /* Hacemos un poco de espera para no saturar la CPU imprimiendo (opcional) */
+        // for(int i=0; i<100000; i++); 
+    }
 }
+ 

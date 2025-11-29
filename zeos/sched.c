@@ -190,6 +190,7 @@ void init_task1(void)
   union task_union *uc = (union task_union*)c;
 
   c->PID=1;
+  c->TID=1;
 
   c->total_quantum=DEFAULT_QUANTUM;
 
@@ -264,3 +265,4 @@ void force_task_switch()
 
   sched_next_rr();
 }
+

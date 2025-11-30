@@ -31,6 +31,8 @@ struct task_struct {
   struct stats p_stats;		/* Process stats */ 
   int PAG_INICI; /* Cima de la pila*/
   int STACK_PAGES;
+  int errno;  /*errno por thread*/
+
 /* Soporte KeyboardEvent */
   void (*keyboard_func)(char, int); // Puntero a la función del usuario
   unsigned long saved_eip;          // Para guardar dónde estaba el thread

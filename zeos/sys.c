@@ -24,11 +24,18 @@
 
 void * get_ebp();
 extern void ret_from_fork();
+void thread_wrapper();
 
 int check_fd(int fd, int permissions)
 {
-  if (fd!=1) return -EBADF; 
-  if (permissions!=ESCRIPTURA) return -EACCES; 
+  if (fd!=1){
+    current()->errno = EBADF;
+    return -1;
+  } 
+  if (permissions!=ESCRIPTURA){
+    current()->errno = EACCES;
+    return -1;
+  } 
   return 0;
 }
 
@@ -44,7 +51,8 @@ void system_to_user(void)
 
 int sys_ni_syscall()
 {
-	return -ENOSYS; 
+	  current()->errno = ENOSYS;
+    return -1;  
 }
 
 int sys_getpid()
@@ -155,7 +163,10 @@ int sys_fork(void)
   union task_union *uchild;
   
   /* Any free task_struct? */
-  if (list_empty(&freequeue)) return -ENOMEM;
+  if (list_empty(&freequeue)) {
+    current()->errno = ENOMEM;
+    return -1;
+  } 
 
   lhcurrent=list_first(&freequeue);
   
@@ -170,6 +181,7 @@ int sys_fork(void)
   uchild->task.PID = ++next_free_id;
   uchild->task.TID = uchild->task.PID;
   uchild->task.state=ST_READY;
+  uchild->task.errno = 0;
   
   /* new pages dir */
   allocate_DIR((struct task_struct*)uchild);
@@ -195,7 +207,8 @@ int sys_fork(void)
         del_ss_pag(process_PT, PAG_LOG_INIT_DATA+i);
       }
       list_add_tail(lhcurrent, &freequeue);
-      return -EAGAIN; 
+      current()->errno = EAGAIN;
+      return -1;
     }
   }
 
@@ -246,7 +259,8 @@ int sys_fork(void)
               list_add_tail(lhcurrent, &freequeue);
 
               /* Retornar código de error */
-              return -EAGAIN;
+              current()->errno = EAGAIN;
+              return -1;
           }
       }
   }
@@ -303,11 +317,14 @@ int ret;
 
 	if ((ret = check_fd(fd, ESCRIPTURA)))
 		return ret;
-	if (nbytes < 0)
-		return -EINVAL;
-	if (!access_ok(VERIFY_READ, buffer, nbytes))
-		return -EFAULT;
-	
+	if (nbytes < 0) {
+    current()->errno = EINVAL;
+    return -1;
+  }  
+	if (!access_ok(VERIFY_READ, buffer, nbytes)){
+    current()->errno = EFAULT;
+    return -1;
+  }
 	bytes_left = nbytes;
 	while (bytes_left > TAM_BUFFER) {
 		copy_from_user(buffer, localbuffer, TAM_BUFFER);
@@ -331,25 +348,68 @@ int sys_gettime()
   return zeos_ticks;
 }
 
+// void sys_exit()
+// {  
+//   int i;
+
+//   page_table_entry *process_PT = get_PT(current());
+
+//   // Deallocate all the propietary physical pages
+//   for (i=0; i<NUM_PAG_DATA; i++)
+//   {
+//     free_frame(get_frame(process_PT, PAG_LOG_INIT_DATA+i));
+//     del_ss_pag(process_PT, PAG_LOG_INIT_DATA+i);
+//   }
+  
+//   /* Free task_struct */
+//   list_add_tail(&(current()->list), &freequeue);
+  
+//   current()->PID=-1;
+  
+//   /* Restarts execution of the next process */
+//   sched_next_rr();
+// }
+
 void sys_exit()
 {  
-  int i;
-
-  page_table_entry *process_PT = get_PT(current());
+  int pid_dead = current()->PID;
+  struct task_struct *t;
+  page_table_entry *PT = get_PT(current());
 
   // Deallocate all the propietary physical pages
-  for (i=0; i<NUM_PAG_DATA; i++)
+  for (int i=0; i<NUM_PAG_DATA; i++)
   {
-    free_frame(get_frame(process_PT, PAG_LOG_INIT_DATA+i));
-    del_ss_pag(process_PT, PAG_LOG_INIT_DATA+i);
+   free_frame(get_frame(PT, PAG_LOG_INIT_DATA+i));
+   del_ss_pag(PT, PAG_LOG_INIT_DATA+i);
+  }
+
+  /* 2. Recorrer TODAS las tareas para encontrar hilos del mismo proceso */
+  for (i = 0; i < NR_TASKS; i++) {
+      t = &(task[i].task);
+      if (t->STACK_PAGES > 0 && t->PAG_INICI > 0) {
+      /* Si la tarea pertenece al proceso que muere (mismo PID) y está en uso */
+      if (t->PID == pid_dead && t->PID != -1) {
+          /* Liberar su pila específica */
+          page_table_entry *thread_PT = get_PT(t); // Comparten DIR, es el mismo
+          for (int j = 0; j < t->STACK_PAGES; j++) {
+              int page = t->PAG_INICI + j;
+              int frame = get_frame(thread_PT, page);
+              if (frame != -1) {
+                  free_frame(frame);
+                  del_ss_pag(thread_PT, page);
+              }
+          }
+        t->STACK_PAGES = 0; 
+        t->PAG_INICI = 0;
+        }
+          t->PID = -1;
+          t->TID = -1;
+          list_del(&(t->list));
+          list_add_tail(&(t->list), &freequeue);
+      }
   }
   
-  /* Free task_struct */
-  list_add_tail(&(current()->list), &freequeue);
-  
-  current()->PID=-1;
-  
-  /* Restarts execution of the next process */
+  /* Cambio de contexto */
   sched_next_rr();
 }
 
@@ -366,9 +426,15 @@ int sys_get_stats(int pid, struct stats *st)
 {
   int i;
   
-  if (!access_ok(VERIFY_WRITE, st, sizeof(struct stats))) return -EFAULT; 
+  if (!access_ok(VERIFY_WRITE, st, sizeof(struct stats))){
+    current()->errno = EFAULT;
+    return -1;
+  }
   
-  if (pid<0) return -EINVAL;
+  if (pid<0) { 
+    current()->errno = EINVAL;
+    return -1;
+  }
   for (i=0; i<NR_TASKS; i++)
   {
     if (task[i].task.PID==pid)
@@ -378,7 +444,9 @@ int sys_get_stats(int pid, struct stats *st)
       return 0;
     }
   }
-  return -ESRCH; /*ESRCH */
+  
+  current()->errno = ESRCH;
+  return -1;
 }
 
 int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
@@ -386,7 +454,10 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   struct list_head *lhcurrent = NULL;
   union task_union *uchild;
   
-  if (list_empty(&freequeue)) return -ENOMEM;
+  if (list_empty(&freequeue)) {
+    current()->errno = ENOMEM;
+    return -1;
+  } 
 
   lhcurrent = list_first(&freequeue);
   list_del(lhcurrent);
@@ -399,6 +470,7 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   uchild_struct->TID = ++next_free_id;
   uchild_struct->PID = current()->PID; 
   uchild_struct->state = ST_READY;
+  uchild_struct->errno = 0; 
 
   page_table_entry *current_PT = get_PT(current());
   int stack_ini = -1;
@@ -424,7 +496,8 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   /* Si no encontramos hueco devolvemos error de memoria */
   if (stack_ini == -1) {
       list_add_tail(lhcurrent, &freequeue);
-      return -ENOMEM;
+      current()->errno = ENOMEM;
+      return -1;
   } 
 
   uchild_struct->PAG_INICI = stack_ini; 
@@ -434,7 +507,10 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   int logical_page_top = stack_ini + pages_needed - 1;
   int new_ph_pag = alloc_frame();
   
-  if (new_ph_pag == -1) { list_add_tail(lhcurrent, &freequeue); return -EAGAIN; }
+  if (new_ph_pag == -1) { list_add_tail(lhcurrent, &freequeue); 
+    current()->errno = EAGAIN;
+    return -1;
+  }
   
   set_ss_pag(current_PT, logical_page_top, new_ph_pag);
   set_cr3(get_DIR(current())); 
@@ -444,6 +520,7 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   unsigned int *stack_ptr = (unsigned int *)user_stack_base;
   
   stack_ptr -= 1; *stack_ptr = (unsigned int)parameter; 
+  stack_ptr -= 1; *stack_ptr = (unsigned int)function;   
   stack_ptr -= 1; *stack_ptr = 0; 
 
   /* Pila de sistema */
@@ -454,7 +531,7 @@ int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
   kstack -= 1; *kstack = (unsigned long)stack_ptr; // ESP, puntero a la cima de usuario mencionada antes
   kstack -= 1;            // EFLAGS
   kstack -= 1;              // CS 
-  kstack -= 1; *kstack = (unsigned long)function;  // EIP, ponemos la direccion de la funcion que queremos que pase a ejecutar el nuevo thread
+  kstack -= 1; *kstack = (unsigned long)thread_wrapper;  // EIP, ponemos la direccion del wrapper que llamara a la funcion y a exit
 
   uchild->task.register_esp = (unsigned long)&uchild->stack[KERNEL_STACK_SIZE-18];
 
@@ -500,8 +577,10 @@ int sys_KeyboardEvent(void (*func)(char, int)) {
     page_table_entry *PT = get_PT(t);
     if (get_frame(PT, PAG_LOG_INIT_AUX_STACK) == -1) {
         int new_frame = alloc_frame();
-        if (new_frame == -1) return -ENOMEM;
-        
+        if (new_frame == -1) {
+          current()->errno = ENOMEM;
+          return -1;
+        }
         set_ss_pag(PT, PAG_LOG_INIT_AUX_STACK, new_frame);
         // No necesitamos flush de TLB inmediato si no la usamos ya, 
         // pero por seguridad se puede hacer set_cr3
@@ -539,4 +618,9 @@ int sys_resume_execution() {
 
 int is_in_keyboard_handler() {
     return current()->in_keyboard_handler;
+}
+
+int sys_get_errno()
+{
+    return current()->errno;
 }

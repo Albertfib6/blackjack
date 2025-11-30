@@ -33,7 +33,6 @@ ENTRY(write)
 /* Common code for negative return */
 nok:
 	neg %eax
-	mov %eax, errno
 	mov $-1, %eax
 	popl %ebp
 	ret
@@ -208,6 +207,16 @@ ENTRY(thread_wrapper)
     call ThreadExit
 
     /* 6. Epílogo (Inalcanzable si ThreadExit funciona bien) */
+    popl %ebp
+    ret
+
+/* --- NUEVO: WRAPPER PARA LEER ERRNO (TLS) --- */
+/* Permite al usuario leer el error de su propio task_struct */
+ENTRY(get_errno)
+    pushl %ebp
+    movl %esp, %ebp
+    movl $30, %eax        // ID syscall hipotético
+    call syscall_sysenter
     popl %ebp
     ret
 

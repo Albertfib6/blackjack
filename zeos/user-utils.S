@@ -180,4 +180,36 @@ ENTRY(keyboard_wrapper)
     popl %ebp
     ret
 
+ /* 
+ * [EBP]      = EBP Guardado
+ * [EBP + 4]  = Fake Return Address (0)
+ * [EBP + 8]  = func (puntero a la función del usuario)
+ * [EBP + 12] = arg (parámetro para la función del usuario)
+ */
+ENTRY(thread_wrapper)
+/* 1. Prólogo estándar */
+    pushl %ebp
+    movl %esp, %ebp
+
+    /* 2. Preparar llamada a func(arg) */
+    /* Empujamos el argumento 'arg' que está en 12(%ebp) */
+    pushl 0xC(%ebp)
+
+    /* 3. Obtener el puntero a función y llamar */
+    /* 'func' está en 8(%ebp) */
+    movl 0x8(%ebp), %eax
+    call *%eax
+
+    /* 4. Limpiar la pila (pop arg) */
+    addl $4, %esp
+
+    /* 5. Llamada obligatoria a ThreadExit */
+    /* No requiere argumentos. Nunca retorna. */
+    call ThreadExit
+
+    /* 6. Epílogo (Inalcanzable si ThreadExit funciona bien) */
+    popl %ebp
+    ret
+
+
 

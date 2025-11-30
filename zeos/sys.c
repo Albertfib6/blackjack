@@ -26,6 +26,32 @@ void * get_ebp();
 extern void ret_from_fork();
 void thread_wrapper();
 
+int is_valid_user_addr(void *addr, int size) {
+    unsigned long start = (unsigned long)addr;
+    unsigned long end = start + size;
+    struct task_struct *t = current();
+
+    /* 1. Rango Estándar (Código + Datos Globales + Heap) */
+    unsigned long data_start = PAG_LOG_INIT_DATA << 12;
+    unsigned long data_end = (PAG_LOG_INIT_DATA + NUM_PAG_DATA) << 12;
+    
+    if (start >= data_start && end <= data_end) return 1;
+
+    /* 2. Rango de Pila del Thread Actual (Dynamic Stack) */
+    /* Este es el requisito del profesor */
+    unsigned long stack_start = t->PAG_INICI << 12;
+    unsigned long stack_end = (t->PAG_INICI + t->STACK_PAGES) << 12;
+
+    if (start >= stack_start && end <= stack_end) return 1;
+
+    return 0; // Acceso inválido
+}
+
+int access_ok(int type, void *addr, int size) {
+    /* Ignoramos 'type' por simplicidad, verificamos rango */
+    return is_valid_user_addr(addr, size)
+}
+
 int check_fd(int fd, int permissions)
 {
   if (fd!=1){

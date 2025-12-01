@@ -59,7 +59,7 @@ void handler_teclado(char key, int pressed) {
         /* Nota: write devuelve -1 en error, y el error real está en errno (o eax negativo si es raw) */
         /* Asumimos wrapper estándar que pone errno. Si es raw syscall, ret será -115 */
         
-        if (ret < 0 && errno == EINPROGRESS) {
+        if (ret < 0 && get_errno() == EINPROGRESS) {
             syscalls_bloqueadas++;
         }
         
@@ -84,7 +84,7 @@ int __attribute__ ((__section__(".text.main")))
     if (pid_hilo < 0) {
     	char buff[32];
     	write(1, "ERROR CODIGO: ", 14);
-    	itoa(errno, buff);
+    	itoa(get_errno(), buff);
     	write(1, buff, strlen(buff));
     	write(1, "\n", 1);
         write(1, "ERROR: Fallo al crear hilo\n", 27);
@@ -146,3 +146,4 @@ int __attribute__ ((__section__(".text.main")))
     }
 }
  
+

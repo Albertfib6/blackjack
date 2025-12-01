@@ -32,7 +32,6 @@ ENTRY(write)
 
 /* Common code for negative return */
 nok:
-	neg %eax
 	mov $-1, %eax
 	popl %ebp
 	ret
@@ -215,7 +214,7 @@ ENTRY(thread_wrapper)
 ENTRY(get_errno)
     pushl %ebp
     movl %esp, %ebp
-    movl $30, %eax        // ID syscall hipotético
+    movl $30, %eax        // ID syscall 
     call syscall_sysenter
     popl %ebp
     ret

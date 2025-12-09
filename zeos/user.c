@@ -5,9 +5,9 @@ char buff2[24];
 
 int pid;
 
-volatile int syscalls_bloqueadas = 0;
-volatile int ultima_tecla = 0;
-volatile int teclas_pulsadas = 0;
+static volatile int syscalls_bloqueadas = 0;
+static volatile int ultima_tecla = 0;
+static volatile int teclas_pulsadas = 0;
 
 #define EINPROGRESS 115
 
@@ -145,4 +145,5 @@ int __attribute__ ((__section__(".text.main")))
     }
 }
  
+
 

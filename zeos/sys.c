@@ -568,27 +568,29 @@ void sys_ThreadExit() {
 
 int sys_KeyboardEvent(void (*func), void *wrapper) {
     struct task_struct *t = current();
-    
+
+	if (t->aux_stack != NULL) {
+        return 0; /* Already allocated */
+    }
     // 1. Registrar la función
     t->keyboard_func = func;
     t->keyboard_wrapper = wrapper;
     t->in_keyboard_handler = 0;
 
-    // 2. Crear la Pila Auxiliar si no existe
-    // Comprobamos si la página lógica ya tiene frame asignado
-    page_table_entry *PT = get_PT(t);
-    if (t->aux_stack == 0) {
-        int new_frame = alloc_frame();
-        if (new_frame == -1) {
-          current()->errno = ENOMEM;
-          return -1;
-        }
-        set_ss_pag(PT, PAG_LOG_INIT_AUX_STACK, new_frame);
-        t->aux_stack = (PAG_LOG_INIT_AUX_STACK+1) << 12;
-        // No necesitamos flush de TLB inmediato si no la usamos ya, 
-        // pero por seguridad se puede hacer set_cr3
-		set_cr3(get_DIR(current())); 
+	int frame = alloc_frame();
+    if (frame < 0) {
+        return -ENOMEM;
     }
+
+    /* Map the frame to a fixed virtual page in user space */
+    page_table_entry *PT = get_PT(t);
+    set_ss_pag(PT, PAG_LOG_INIT_AUX_STACK, frame);
+
+    /* Flush TLB */
+    set_cr3(get_DIR(t));
+
+    /* Stack top is at the end of the page (stacks grow downward) */
+     t->aux_stack = (PAG_LOG_INIT_AUX_STACK+1) << 12;
 
     return 0;
 }

@@ -26,31 +26,6 @@ void * get_ebp();
 extern void ret_from_fork();
 void thread_wrapper();
 
-int is_valid_user_addr(void *addr, int size) {
-    unsigned long start = (unsigned long)addr;
-    unsigned long end = start + size;
-    struct task_struct *t = current();
-
-    /* 1. Rango Estándar (Código + Datos Globales + Heap) */
-    unsigned long data_start = PAG_LOG_INIT_DATA << 12;
-    unsigned long data_end = (PAG_LOG_INIT_DATA + NUM_PAG_DATA) << 12;
-    
-    if (start >= data_start && end <= data_end) return 1;
-
-    /* 2. Rango de Pila del Thread Actual (Dynamic Stack) */
-    /* Este es el requisito del profesor */
-    unsigned long stack_start = t->PAG_INICI << 12;
-    unsigned long stack_end = (t->PAG_INICI + t->STACK_PAGES) << 12;
-
-    if (start >= stack_start && end <= stack_end) return 1;
-
-    return 0; // Acceso inválido
-}
-
-int access_ok(int type, void *addr, int size) {
-    /* Ignoramos 'type' por simplicidad, verificamos rango */
-    return is_valid_user_addr(addr, size)
-}
 
 int check_fd(int fd, int permissions)
 {
@@ -410,7 +385,7 @@ void sys_exit()
   }
 
   /* 2. Recorrer TODAS las tareas para encontrar hilos del mismo proceso */
-  for (i = 0; i < NR_TASKS; i++) {
+  for (int i = 0; i < NR_TASKS; i++) {
       t = &(task[i].task);
       if (t->STACK_PAGES > 0 && t->PAG_INICI > 0) {
       /* Si la tarea pertenece al proceso que muere (mismo PID) y está en uso */
@@ -475,7 +450,7 @@ int sys_get_stats(int pid, struct stats *st)
   return -1;
 }
 
-int sys_ThreadCreate(void (*function)(void* arg), void* parameter) {
+int sys_ThreadCreate(void (*function)(void* arg), void* parameter, void* thread_wrapper) {
   struct task_struct *uchild_struct;
   struct list_head *lhcurrent = NULL;
   union task_union *uchild;
@@ -591,23 +566,25 @@ void sys_ThreadExit() {
     sched_next_rr();
 }
 
-int sys_KeyboardEvent(void (*func)(char, int)) {
+int sys_KeyboardEvent(void (*func), void *wrapper) {
     struct task_struct *t = current();
     
     // 1. Registrar la función
     t->keyboard_func = func;
+    t->keyboard_wrapper = wrapper;
     t->in_keyboard_handler = 0;
 
     // 2. Crear la Pila Auxiliar si no existe
     // Comprobamos si la página lógica ya tiene frame asignado
     page_table_entry *PT = get_PT(t);
-    if (get_frame(PT, PAG_LOG_INIT_AUX_STACK) == -1) {
+    if (t->aux_stack == 0) {
         int new_frame = alloc_frame();
         if (new_frame == -1) {
           current()->errno = ENOMEM;
           return -1;
         }
         set_ss_pag(PT, PAG_LOG_INIT_AUX_STACK, new_frame);
+        t->aux_stack = (PAG_LOG_INIT_AUX_STACK+1) << 12;
         // No necesitamos flush de TLB inmediato si no la usamos ya, 
         // pero por seguridad se puede hacer set_cr3
 		set_cr3(get_DIR(current())); 
@@ -618,6 +595,8 @@ int sys_KeyboardEvent(void (*func)(char, int)) {
 
 int sys_resume_execution() {
     struct task_struct *t = current();
+    union task_union *u = (union task_union *)t; 
+
 
     // Solo hacemos algo si venimos de un evento de teclado
     if (t->in_keyboard_handler == 1) {
@@ -626,7 +605,7 @@ int sys_resume_execution() {
         
         // Necesitamos acceder a la pila del kernel donde se guardó el estado 
         // al entrar en ESTA syscall (int 0x2b)
-        unsigned long *kernel_stack = (unsigned long *)&t->stack[KERNEL_STACK_SIZE];
+        unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
         
         // Restauramos el EIP y ESP que guardamos en keyboard_routine
         kernel_stack[-5] = t->saved_eip;

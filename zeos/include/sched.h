@@ -15,7 +15,8 @@
 #define KERNEL_STACK_SIZE	1024
 
 // Definimos una dirección lógica fija para la Pila Auxiliar (ej. después del código/datos)
-#define PAG_LOG_INIT_AUX_STACK  (PAG_LOG_INIT_DATA + NUM_PAG_DATA + 50) // Lejos de la pila normal
+/* En sched.h o mm_address.h */
+#define PAG_LOG_INIT_AUX_STACK 500
 #define AUX_STACK_SIZE 1 // 1 página
 
 enum state_t { ST_RUN, ST_READY, ST_BLOCKED };
@@ -38,6 +39,9 @@ struct task_struct {
   unsigned long saved_eip;          // Para guardar dónde estaba el thread
   unsigned long saved_esp;          // Para guardar la pila original del thread
   int in_keyboard_handler;          // Flag: 1 si está ejecutando el evento, 0 si no
+  void *keyboard_wrapper;
+  unsigned long aux_stack;
+
 };
 
 union task_union {

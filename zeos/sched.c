@@ -195,6 +195,7 @@ void init_task1(void)
   c->total_quantum=DEFAULT_QUANTUM;
 
   c->state=ST_RUN;
+  c->aux_stack = 0;
 
   remaining_quantum=c->total_quantum;
 

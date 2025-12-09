@@ -7,6 +7,7 @@
 #include <hardware.h>
 #include <io.h>
 #include <mm.h>
+#include <mm_address.h>
 
 #include <sched.h>
 
@@ -14,6 +15,11 @@
 
 Gate idt[IDT_ENTRIES];
 Register    idtR;
+
+/* --- FIX 1: Implementación manual de outb para evitar error de linker --- */
+static inline void outb(unsigned short port, unsigned char val) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(val), "Nd"(port));
+}
 
 char char_map[] =
 {
@@ -61,6 +67,7 @@ void keyboard_routine()
   int pressed = (c & 0x80) ? 0 : 1; 
 
   struct task_struct *t = current();
+  union task_union *u = (union task_union *)t; 
 
   // 2. Verificar si hay que inyectar el evento
   // Condición: Hay función registrada Y NO estamos ya procesando una (evitar recursión)
@@ -72,7 +79,7 @@ void keyboard_routine()
       // Aquí el hardware guardó SS, ESP, EFLAGS, CS, EIP al producirse la interrupción.
       // KERNEL_STACK_SIZE suele ser 1024 dwords (o bytes según tu define).
       // Accedemos como array de unsigned long.
-      unsigned long *kernel_stack = (unsigned long *)&t->stack[KERNEL_STACK_SIZE];
+      unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
 
       // Índices desde el final (según push de hardware x86):
       // [-1] SS
@@ -108,7 +115,7 @@ void keyboard_routine()
       // Engañamos al IRET. Le decimos: "No vuelvas donde estabas.
       // Vuelve a 'libc_keyboard_wrapper' usando la pila auxiliar".
       
-      kernel_stack[-5] = (unsigned long)keyboard_wrapper; // Nuevo EIP
+      kernel_stack[-5] = (unsigned long)t->keyboard_wrapper; // Nuevo EIP
       kernel_stack[-2] = (unsigned long)user_stack_ptr;        // Nuevo ESP
 
       // FIN: Al terminar esta función, se ejecuta el epílogo de la interrupción 
@@ -122,44 +129,51 @@ void keyboard_routine()
       }
   }
 }
-
-void page_fault_routine(int error_code, unsigned int fault_addr) {
+/* En interrupt.c */
+void page_fault_routine(int error_code, unsigned int fault_addr)
+{
     struct task_struct *t = current();
     page_table_entry *PT = get_PT(t);
-
-    /* 
-       Comprobamos si la dirección del fallo (fault_addr) cae dentro 
-       del hueco reservado para la pila del thread.
-    */
-
+    
+    // Calculamos la página lógica que ha fallado
     unsigned int logical_page = fault_addr >> 12;
 
-    // Rango válido: Desde PAG_INICI hasta (PAG_INICI + STACK_PAGES)
-    if (logical_page >= t->PAG_INICI && 
-        logical_page < (t->PAG_INICI + t->STACK_PAGES)) {
+    /* 1. CASO PILA DE USUARIO (El que ya tenías) */
+    if (logical_page >= t->PAG_INICI && logical_page < (t->PAG_INICI + t->STACK_PAGES)) {
+        // ... Tu código para la pila normal ...
+        if (get_frame(PT, logical_page) == -1) {
+            int new_frame = alloc_frame();
+            if (new_frame != -1) {
+                set_ss_pag(PT, logical_page, new_frame);
+                set_cr3(get_DIR(t)); // IMPORTANTE: Flush TLB
+                return;
+            }
+        }
+    }
+    
+    /* 2. [NUEVO] CASO PILA AUXILIAR (El arreglo mágico) */
+    /* Si el fallo ocurre exactamente en la página de la pila auxiliar... */
+    else if (logical_page == PAG_LOG_INIT_AUX_STACK) {
         
-        // Es un acceso a la zona reservada de pila.
-        // Comprobamos que no haya ya memoria asignada 
+        // Comprobamos si le falta el frame físico
         if (get_frame(PT, logical_page) == -1) {
             
-            // Asignar nueva página física
+            // ¡Lo asignamos aquí mismo!
             int new_frame = alloc_frame();
             
             if (new_frame != -1) {
-                // Mapear la página
                 set_ss_pag(PT, logical_page, new_frame);
-                
-                set_cr3(get_DIR(t)); //Sincronizar TLB
-                
-                return; 
+                set_cr3(get_DIR(t)); // Flush TLB para que la CPU vea el cambio
+                return; // Volvemos a ejecutar la instrucción y funcionará
             } else {
-                // No queda memoria física en el sistema
+                // Out of memory
                 while(1);
             }
         }
     }
+    /* ------------------------------------------------ */
 
-    // Si llegamos aquí, no fue un crecimiento de pila válido, fue un acceso ilegal real 
+    // Si no es ninguno de los casos anteriores, es un error real -> Bloqueo
     while(1);
 }
 
@@ -239,6 +253,8 @@ void idt_init()
   setSysenter();
 
   set_idt_reg(&idtR);
+
+  outb(0x21, inb(0x21) & ~0x02);
 }
 
 

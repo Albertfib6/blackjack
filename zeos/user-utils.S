@@ -101,10 +101,11 @@ ENTRY(get_stats)
 ENTRY(ThreadCreate)
 	pushl %ebp
 	movl %esp, %ebp
-	pushl %ebx;  // Save EBX, ESI and EDI if modified
+	pushl %ebx  // Save EBX, ESI and EDI if modified
 	movl $27, %eax
-	movl 0x8(%ebp), %ebx;	//function
-	movl 0xC(%ebp), %ecx;	//parameter
+	movl 0x8(%ebp), %ebx	//function
+	movl 0xC(%ebp), %ecx	//parameter
+	movl $thread_wrapper, %edx
 	call syscall_sysenter
 	popl %ebx
 	test %eax, %eax
@@ -128,6 +129,7 @@ ENTRY(KeyboardEvent)
 	pushl %ebx;  // Save EBX, ESI and EDI if modified
 	movl $29, %eax
 	movl 0x8(%ebp), %ebx;	//func
+	movl $keyboard_wrapper, %ecx
 	call syscall_sysenter
 	popl %ebx
 	test %eax, %eax
@@ -184,6 +186,7 @@ ENTRY(keyboard_wrapper)
  * [EBP + 8]  = func (puntero a la función del usuario)
  * [EBP + 12] = arg (parámetro para la función del usuario)
  */
+
 ENTRY(thread_wrapper)
 /* 1. Prólogo estándar */
     pushl %ebp

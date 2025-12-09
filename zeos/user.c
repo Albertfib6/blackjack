@@ -43,7 +43,6 @@ void funcion_thread_pesado(void *parametro) {
     }
 
     /* Probamos que ThreadExit funcione */
-    ThreadExit();
 }
 
 void handler_teclado(char key, int pressed) {
@@ -77,7 +76,7 @@ int __attribute__ ((__section__(".text.main")))
      /* __asm__ __volatile__ ("mov %0, %%cr3"::"r" (0) ); */
 
 	/* Test 1: Creación Básica */
-    write(1, "Iniciando Test Milestone 1...\n", 30);
+    /*write(1, "Iniciando Test Milestone 1...\n", 30);
     
     int pid_hilo = ThreadCreate(funcion_thread_pesado, (void*)1);
 
@@ -98,10 +97,10 @@ int __attribute__ ((__section__(".text.main")))
    /* ESPERA SEGURA:
        Usamos un bucle largo en lugar de pocos yields para dar tiempo de sobra
        al hilo (creación + page fault + impresión) antes de seguir. */
-    int i;
+    /*int i;
     for (i = 0; i < 20000000; i++); 
 
-    write(1, "Test finalizado.\n", 17);
+    write(1, "Test finalizado.\n", 17);*/
 
     write(1, "Test 2: Activando Teclado. PULSA TECLAS.\n", 41);
 

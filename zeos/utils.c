@@ -1,5 +1,6 @@
 #include <utils.h>
 #include <types.h>
+#include <sched.h>
 
 #include <mm_address.h>
 
@@ -64,25 +65,50 @@ int copy_to_user(void *start, void *dest, int size)
  */
 int access_ok(int type, const void * addr, unsigned long size)
 {
-  unsigned long addr_ini, addr_fin;
+    unsigned long addr_ini = (((unsigned long)addr) >> 12);
+    unsigned long addr_fin = (((unsigned long)addr + size) >> 12);
 
-  addr_ini=(((unsigned long)addr)>>12);
-  addr_fin=((((unsigned long)addr)+size)>>12);
-  if (addr_fin < addr_ini) return 0; //This looks like an overflow ... deny access
+    if (addr_fin < addr_ini) return 0; // Overflow check
 
-  switch(type)
-  {
-    case VERIFY_WRITE:
-      /* Should suppose no support for automodifyable code */
-      if ((addr_ini>=USER_FIRST_PAGE+NUM_PAG_CODE)&&
-          (addr_fin<=USER_FIRST_PAGE+NUM_PAG_CODE+NUM_PAG_DATA))
-	  return 1;
-    default:
-      if ((addr_ini>=USER_FIRST_PAGE)&&
-  	(addr_fin<=(USER_FIRST_PAGE+NUM_PAG_CODE+NUM_PAG_DATA)))
-          return 1;
-  }
-  return 0;
+    // -------------------------------------------------------------
+    // 1. TU CÓDIGO ACTUAL (Código y Datos Globales)
+    // -------------------------------------------------------------
+    switch(type)
+    {
+        case VERIFY_WRITE:
+            if ((addr_ini >= USER_FIRST_PAGE + NUM_PAG_CODE) &&
+                (addr_fin <= USER_FIRST_PAGE + NUM_PAG_CODE + NUM_PAG_DATA))
+                return 1;
+            break;
+        default:
+            if ((addr_ini >= USER_FIRST_PAGE) &&
+                (addr_fin <= (USER_FIRST_PAGE + NUM_PAG_CODE + NUM_PAG_DATA)))
+                return 1;
+    }
+
+    // -------------------------------------------------------------
+    // 2. PILA DE LOS THREADS (Requisito previo)
+    // -------------------------------------------------------------
+    struct task_struct *t = current();
+    if (addr_ini >= t->PAG_INICI && 
+        addr_fin <= (t->PAG_INICI + t->STACK_PAGES)) {
+        return 1;
+    }
+
+    // -------------------------------------------------------------
+    // 3. [NUEVO] PILA AUXILIAR (Para que funcione el handler)
+    // -------------------------------------------------------------
+    // Si la dirección cae en la página reservada para el handler, es válida.
+    if (addr_ini == PAG_LOG_INIT_AUX_STACK) {
+        return 1;
+    }
+
+    unsigned long aux_start = PAG_LOG_INIT_AUX_STACK << 12;
+unsigned long aux_end = (PAG_LOG_INIT_AUX_STACK + 1) << 12;
+
+if (addr_ini >= aux_start && addr_fin <= aux_end) return 1;
+
+    return 0;
 }
 
 

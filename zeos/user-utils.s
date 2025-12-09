@@ -39,8 +39,6 @@
 
 
 nok:
- neg %eax
- mov %eax, errno
  mov $-1, %eax
  popl %ebp
  ret
@@ -110,10 +108,11 @@ nok:
 .globl ThreadCreate; .type ThreadCreate, @function; .align 0; ThreadCreate:
  pushl %ebp
  movl %esp, %ebp
- pushl %ebx;
+ pushl %ebx
  movl $27, %eax
- movl 0x8(%ebp), %ebx;
- movl 0xC(%ebp), %ecx;
+ movl 0x8(%ebp), %ebx
+ movl 0xC(%ebp), %ecx
+ movl $thread_wrapper, %edx
  call syscall_sysenter
  popl %ebx
  test %eax, %eax
@@ -130,3 +129,83 @@ nok:
   js nok
   popl %ebp
   ret
+
+.globl KeyboardEvent; .type KeyboardEvent, @function; .align 0; KeyboardEvent:
+ pushl %ebp
+ movl %esp, %ebp
+ pushl %ebx;
+ movl $29, %eax
+ movl 0x8(%ebp), %ebx;
+ movl $keyboard_wrapper, %ecx
+ call syscall_sysenter
+ popl %ebx
+ test %eax, %eax
+ js nok
+ popl %ebp
+ ret
+# 152 "user-utils.S"
+.globl keyboard_wrapper; .type keyboard_wrapper, @function; .align 0; keyboard_wrapper:
+
+    pushl %ebp
+    movl %esp, %ebp
+
+
+
+
+
+
+    pushl 0x10(%ebp)
+
+
+    pushl 0xC(%ebp)
+
+
+    movl 0x8(%ebp), %eax
+    call *%eax
+
+
+
+    addl $8, %esp
+
+
+
+    int $0x2b
+
+
+    popl %ebp
+    ret
+# 190 "user-utils.S"
+.globl thread_wrapper; .type thread_wrapper, @function; .align 0; thread_wrapper:
+
+    pushl %ebp
+    movl %esp, %ebp
+
+
+
+    pushl 0xC(%ebp)
+
+
+
+    movl 0x8(%ebp), %eax
+    call *%eax
+
+
+    addl $4, %esp
+
+
+
+    call ThreadExit
+
+
+    popl %ebp
+    ret
+
+
+
+.globl get_errno; .type get_errno, @function; .align 0; get_errno:
+    pushl %ebp
+    movl %esp, %ebp
+    movl $30, %eax
+    call syscall_sysenter
+    popl %ebp
+    ret

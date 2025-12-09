@@ -42,27 +42,56 @@
       iret;
 
 .globl system_call_handler; .type system_call_handler, @function; .align 0; system_call_handler:
- push $0x2B
- push %ebp
- pushfl
- push $0x23
- push 4(%ebp)
- pushl %gs; pushl %fs; pushl %es; pushl %ds; pushl %eax; pushl %ebp; pushl %edi; pushl %esi; pushl %edx; pushl %ecx; pushl %ebx; movl $0x18, %edx; movl %edx, %ds; movl %edx, %es
- cmpl $0, %eax
- jl sysenter_err
- cmpl $MAX_SYSCALL, %eax
- jg sysenter_err
- call *sys_call_table(, %eax, 0x04)
- jmp sysenter_fin
+    push $0x2B
+    push %ebp
+    pushfl
+    push $0x23
+    push 4(%ebp)
+    pushl %gs; pushl %fs; pushl %es; pushl %ds; pushl %eax; pushl %ebp; pushl %edi; pushl %esi; pushl %edx; pushl %ecx; pushl %ebx; movl $0x18, %edx; movl %edx, %ds; movl %edx, %es
+
+
+
+
+    pushl %eax
+
+
+    call is_in_keyboard_handler
+
+
+    cmpl $0, %eax
+    jne sysenter_einprogress
+
+
+    popl %eax
+
+
+
+    cmpl $0, %eax
+    jl sysenter_err
+    cmpl $MAX_SYSCALL, %eax
+    jg sysenter_err
+    call *sys_call_table(, %eax, 0x04)
+    jmp sysenter_fin
+
 sysenter_err:
- movl $-38, %eax
+    movl $-38, %eax
+    jmp sysenter_fin
+
+
+sysenter_einprogress:
+
+    addl $4, %esp
+    movl $-115, %eax
+
+
 sysenter_fin:
- movl %eax, 0x18(%esp)
- popl %ebx; popl %ecx; popl %edx; popl %esi; popl %edi; popl %ebp; popl %eax; popl %ds; popl %es; popl %fs; popl %gs;
- movl (%esp), %edx
- movl 12(%esp), %ecx
- sti
- sysexit
+
+    movl %eax, 0x18(%esp)
+    popl %ebx; popl %ecx; popl %edx; popl %esi; popl %edi; popl %ebp; popl %eax; popl %ds; popl %es; popl %fs; popl %gs;
+    movl (%esp), %edx
+    movl 12(%esp), %ecx
+    sti
+    sysexit
 
 .globl page_fault_handler; .type page_fault_handler, @function; .align 0; page_fault_handler:
 
@@ -93,6 +122,14 @@ sysenter_fin:
     iret
 
 
-  .globl ret_from_fork; .type ret_from_fork, @function; .align 0; ret_from_fork:
+.globl ret_from_fork; .type ret_from_fork, @function; .align 0; ret_from_fork:
+    popl %ebx; popl %ecx; popl %edx; popl %esi; popl %edi; popl %ebp; popl %eax; popl %ds; popl %es; popl %fs; popl %gs;
+    iret
+
+.globl handler_resume_execution; .type handler_resume_execution, @function; .align 0; handler_resume_execution:
+    pushl %gs; pushl %fs; pushl %es; pushl %ds; pushl %eax; pushl %ebp; pushl %edi; pushl %esi; pushl %edx; pushl %ecx; pushl %ebx; movl $0x18, %edx; movl %edx, %ds; movl %edx, %es
+
+    call sys_resume_execution
+
     popl %ebx; popl %ecx; popl %edx; popl %esi; popl %edi; popl %ebp; popl %eax; popl %ds; popl %es; popl %fs; popl %gs;
     iret

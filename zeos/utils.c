@@ -1,7 +1,6 @@
 #include <utils.h>
 #include <types.h>
 #include <sched.h>
-
 #include <mm_address.h>
 
 void copy_data(void *start, void *dest, int size)
@@ -19,7 +18,7 @@ void copy_data(void *start, void *dest, int size)
     size --;
   }
 }
-/* Copia de espacio de usuario a espacio de kernel, devuelve 0 si ok y -1 si error*/
+
 int copy_from_user(void *start, void *dest, int size)
 {
   DWord *p = start, *q = dest;
@@ -36,7 +35,7 @@ int copy_from_user(void *start, void *dest, int size)
   }
   return 0;
 }
-/* Copia de espacio de kernel a espacio de usuario, devuelve 0 si ok y -1 si error*/
+
 int copy_to_user(void *start, void *dest, int size)
 {
   DWord *p = start, *q = dest;
@@ -54,40 +53,35 @@ int copy_to_user(void *start, void *dest, int size)
   return 0;
 }
 
-/* access_ok: Checks if a user space pointer is valid
- * @type:  Type of access: %VERIFY_READ or %VERIFY_WRITE. Note that
- *         %VERIFY_WRITE is a superset of %VERIFY_READ: if it is safe
- *         to write to a block, it is always safe to read from it
- * @addr:  User space pointer to start of block to check
- * @size:  Size of block to check
- * Returns true (nonzero) if the memory block may be valid,
- *         false (zero) if it is definitely invalid
- */
+/* access_ok: Checks if a user space pointer is valid */
 int access_ok(int type, const void * addr, unsigned long size)
 {
+    // addr_ini y addr_fin son NÚMEROS DE PÁGINA (ej: 500), no direcciones de memoria
     unsigned long addr_ini = (((unsigned long)addr) >> 12);
     unsigned long addr_fin = (((unsigned long)addr + size) >> 12);
 
     if (addr_fin < addr_ini) return 0; // Overflow check
 
     // -------------------------------------------------------------
-    // 1. TU CÓDIGO ACTUAL (Código y Datos Globales)
+    // 1. CÓDIGO Y DATOS GLOBALES
     // -------------------------------------------------------------
     switch(type)
     {
         case VERIFY_WRITE:
+            // Solo permitimos escribir en DATOS, no en CÓDIGO
             if ((addr_ini >= USER_FIRST_PAGE + NUM_PAG_CODE) &&
                 (addr_fin <= USER_FIRST_PAGE + NUM_PAG_CODE + NUM_PAG_DATA))
                 return 1;
             break;
         default:
+            // Lectura permitida en CÓDIGO y DATOS
             if ((addr_ini >= USER_FIRST_PAGE) &&
                 (addr_fin <= (USER_FIRST_PAGE + NUM_PAG_CODE + NUM_PAG_DATA)))
                 return 1;
     }
 
     // -------------------------------------------------------------
-    // 2. PILA DE LOS THREADS (Requisito previo)
+    // 2. PILA DEL THREAD (Dinámica)
     // -------------------------------------------------------------
     struct task_struct *t = current();
     if (addr_ini >= t->PAG_INICI && 
@@ -96,36 +90,20 @@ int access_ok(int type, const void * addr, unsigned long size)
     }
 
     // -------------------------------------------------------------
-    // 3. [NUEVO] PILA AUXILIAR (Para que funcione el handler)
+    // 3. PILA AUXILIAR (Interrupciones / Handler)
     // -------------------------------------------------------------
-    // Si la dirección cae en la página reservada para el handler, es válida.
+    // Comparamos páginas con páginas. PAG_LOG_INIT_AUX_STACK es 500 (aprox).
+    // Si la dirección empieza en la página auxiliar, es válido.
     if (addr_ini == PAG_LOG_INIT_AUX_STACK) {
         return 1;
     }
 
-    unsigned long aux_start = PAG_LOG_INIT_AUX_STACK << 12;
-unsigned long aux_end = (PAG_LOG_INIT_AUX_STACK + 1) << 12;
-
-if (addr_ini >= aux_start && addr_fin <= aux_end) return 1;
-
+    // Si no es ninguno de los anteriores, acceso denegado.
     return 0;
 }
 
-
 #define CYCLESPERTICK 109000
 
-/*
- * do_div() is NOT a C function. It wants to return
- * two values (the quotient and the remainder), but
- * since that doesn't work very well in C, what it
- * does is:
- *
- * - modifies the 64-bit dividend _in_place_
- * - returns the 32-bit remainder
- *
- * This ends up being the most efficient "calling
- * convention" on x86.
- */
 #define do_div(n,base) ({ \
         unsigned long __upper, __low, __high, __mod, __base; \
         __base = (base); \
@@ -160,9 +138,7 @@ unsigned long get_ticks(void) {
 void memset(void *s, unsigned char c, int size)
 {
   unsigned char *m=(unsigned char *)s;
-  
   int i;
-  
   for (i=0; i<size; i++)
   {
     m[i]=c;

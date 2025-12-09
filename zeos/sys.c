@@ -596,25 +596,39 @@ int sys_KeyboardEvent(void (*func), void *wrapper) {
 }
 
 int sys_resume_execution() {
-    struct task_struct *t = current();
-    union task_union *u = (union task_union *)t; 
+    struct task_struct *task = current();
+    union task_union *task_union = (union task_union *)task; 
 
 
     // Solo hacemos algo si venimos de un evento de teclado
-    if (t->in_keyboard_handler == 1) {
+    if (task->in_keyboard_handler == 1) {
         
         // --- RESTAURAR CONTEXTO ORIGINAL ---
         
         // Necesitamos acceder a la pila del kernel donde se guardó el estado 
         // al entrar en ESTA syscall (int 0x2b)
-        unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
+        unsigned long *kernel_stack = (unsigned long *)&task_union->stack[KERNEL_STACK_SIZE];
         
         // Restauramos el EIP y ESP que guardamos en keyboard_routine
-        kernel_stack[-5] = t->saved_eip;
-        kernel_stack[-2] = t->saved_esp;
+        task_union->stack[STACK_EBX] = task->ctx_guardat[0];
+        task_union->stack[STACK_ECX] = task->ctx_guardat[1];
+        task_union->stack[STACK_EDX] = task->ctx_guardat[2];
+        task_union->stack[STACK_ESI] = task->ctx_guardat[3];
+        task_union->stack[STACK_EDI] = task->ctx_guardat[4];
+        task_union->stack[STACK_EBP] = task->ctx_guardat[5];
+        task_union->stack[STACK_EAX] = task->ctx_guardat[6];
+        task_union->stack[STACK_DS] = task->ctx_guardat[7];
+        task_union->stack[STACK_ES] = task->ctx_guardat[8];
+        task_union->stack[STACK_FS] = task->ctx_guardat[9];
+        task_union->stack[STACK_GS] = task->ctx_guardat[10];
+        task_union->stack[STACK_USER_EIP] = task->ctx_guardat[11];
+        task_union->stack[STACK_USER_CS] = task->ctx_guardat[12];
+        task_union->stack[STACK_EFLAGS] = task->ctx_guardat[13];
+        task_union->stack[STACK_USER_ESP] = task->ctx_guardat[14];
+        task_union->stack[STACK_USER_SS] = task->ctx_guardat[15];
         
         // Desactivamos el flag
-        t->in_keyboard_handler = 0;
+        task->in_keyboard_handler = 0;
         
         // Al hacer IRET desde esta syscall, la CPU volverá 
         // exactamente donde estaba el thread antes de pulsar la tecla.

@@ -67,7 +67,7 @@ void keyboard_routine()
   int pressed = (c & 0x80) ? 0 : 1; 
 
   struct task_struct *t = current();
-  union task_union *u = (union task_union *)t; 
+  union task_union *task_union = (union task_union *)t; 
 
   // 2. Verificar si hay que inyectar el evento
   // Condición: Hay función registrada Y NO estamos ya procesando una (evitar recursión)
@@ -79,7 +79,7 @@ void keyboard_routine()
       // Aquí el hardware guardó SS, ESP, EFLAGS, CS, EIP al producirse la interrupción.
       // KERNEL_STACK_SIZE suele ser 1024 dwords (o bytes según tu define).
       // Accedemos como array de unsigned long.
-      unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
+      unsigned long *kernel_stack = (unsigned long *)&task_union->stack[KERNEL_STACK_SIZE];
 
       // Índices desde el final (según push de hardware x86):
       // [-1] SS
@@ -90,8 +90,24 @@ void keyboard_routine()
 
       // --- PASO B: GUARDAR CONTEXTO ORIGINAL ---
       // Guardamos dónde estaba el usuario para que 'int 0x2b' sepa volver.
-      t->saved_eip = kernel_stack[-5]; 
-      t->saved_esp = kernel_stack[-2]; 
+
+
+      t->ctx_guardat[0] = task_union->stack[STACK_EBX];
+      t->ctx_guardat[1] = task_union->stack[STACK_ECX];
+      t->ctx_guardat[2] = task_union->stack[STACK_EDX];
+      t->ctx_guardat[3] = task_union->stack[STACK_ESI];
+      t->ctx_guardat[4] = task_union->stack[STACK_EDI];
+      t->ctx_guardat[5] = task_union->stack[STACK_EBP];
+      t->ctx_guardat[6] = task_union->stack[STACK_EAX];
+      t->ctx_guardat[7] = task_union->stack[STACK_DS];
+      t->ctx_guardat[8] = task_union->stack[STACK_ES];
+      t->ctx_guardat[9] = task_union->stack[STACK_FS];
+      t->ctx_guardat[10] = task_union->stack[STACK_GS];
+      t->ctx_guardat[11] = task_union->stack[STACK_USER_EIP];
+      t->ctx_guardat[12] = task_union->stack[STACK_USER_CS];
+      t->ctx_guardat[13] = task_union->stack[STACK_EFLAGS];
+      t->ctx_guardat[14] = task_union->stack[STACK_USER_ESP];
+      t->ctx_guardat[15] = task_union->stack[STACK_USER_SS];
       t->in_keyboard_handler = 1;      // Marcamos que estamos en evento
 
       // --- PASO C: PREPARAR PILA AUXILIAR (User Space) ---

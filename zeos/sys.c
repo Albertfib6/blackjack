@@ -607,7 +607,6 @@ int sys_resume_execution() {
         
         unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
         
-        // Restauramos el EIP y ESP que guardamos en keyboard_routine
         u->stack[STACK_EBX] = t->ctx_guardat[0];
         u->stack[STACK_ECX] = t->ctx_guardat[1];
         u->stack[STACK_EDX] = t->ctx_guardat[2];
@@ -628,8 +627,7 @@ int sys_resume_execution() {
         // Desactivamos el flag
         t->in_keyboard_handler = 0;
         
-        // Al hacer IRET desde esta syscall, la CPU volverá 
-        // exactamente donde estaba el thread antes de pulsar la tecla.
+       
     }
     
     return 0;

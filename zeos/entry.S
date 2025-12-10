@@ -128,14 +128,29 @@ ENTRY(system_call_handler)
     jmp sysenter_fin
 
 sysenter_err:
-    movl $-ENOSYS, %eax
+    pushl $ENOSYS
+    call update_errno_to_current
+    addl $4, %esp
+    
+    /* 2. Devolver -1 al wrapper */
+    movl $-1, %eax
     jmp sysenter_fin
 
 /* Nueva etiqueta para el error de progreso */
 sysenter_einprogress:
-    /* Necesitamos limpiar la pila porque hicimos un 'pushl %eax' extra antes del call */
+
     addl $4, %esp 
-    movl $-EINPROGRESS, %eax
+    /* Llamamos a la función C para guardar el error en el TLS */
+    pushl $EINPROGRESS          ; Argumento: El código de error positivo
+    call update_errno_to_current
+    addl $4, %esp               ; Limpiar argumento
+    
+    /* Preparamos el valor de retorno (-1) para el wrapper */
+    movl $-1, %eax
+    
+    /* Saltamos al final para restaurar contexto y salir */
+    jmp sysenter_fin
+
     /* Dejamos que caiga ("fallthrough") a sysenter_fin */
 
 sysenter_fin:
@@ -188,6 +203,7 @@ ENTRY(handler_resume_execution)
     RESTORE_ALL                 // Restaurar registros
     iret                        // Volver a usuario (usará el EIP/ESP modificados)
     
+
 
 
 

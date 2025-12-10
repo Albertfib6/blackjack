@@ -178,8 +178,8 @@ ENTRY(page_fault_handler)
 
     call page_fault_routine
 
-    /* 4. Limpiar argumentos de la llamada 
-    addl $8, %esp */
+    /* 4. Limpiar argumentos de la llamada */
+    addl $8, %esp 
 
     RESTORE_ALL
 
@@ -203,6 +203,7 @@ ENTRY(handler_resume_execution)
     RESTORE_ALL                 // Restaurar registros
     iret                        // Volver a usuario (usará el EIP/ESP modificados)
     
+
 
 
 

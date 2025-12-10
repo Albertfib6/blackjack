@@ -641,3 +641,7 @@ int sys_get_errno()
 {
     return current()->errno;
 }
+
+void update_errno_to_current(int err) {
+    current()->errno = err;
+}

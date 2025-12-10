@@ -56,26 +56,18 @@ void keyboard_routine()
   unsigned char keycode = c & 0x7F; // Ignoramos el bit de "liberación"
   
   // 1. Determinar si es Press (1) o Release (0)
-  // En tu código: (c & 0x80) es release, else es press.
   int pressed = (c & 0x80) ? 0 : 1; 
 
   struct task_struct *t = current();
   union task_union *u = (union task_union *)t; 
 
   // 2. Verificar si hay que inyectar el evento
-  // Condición: Hay función registrada Y NO estamos ya procesando una (evitar recursión)
   if (t->keyboard_func != NULL && t->in_keyboard_handler == 0) {
       
       char key = char_map[keycode]; // Convertir scancode a char
-
-      // --- PASO A: ACCEDER A LA PILA DE SISTEMA DEL HILO ---
-      // KERNEL_STACK_SIZE suele ser 1024 dwords (o bytes según tu define).
-      // Accedemos como array de unsigned long.
       unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
 
-      // --- PASO B: GUARDAMOS EL CONTEXTO SW I HW
-
-
+      //guardamos todo el contexto hw+sw
       t->ctx_guardat[0] = u->stack[STACK_EBX];
       t->ctx_guardat[1] = u->stack[STACK_ECX];
       t->ctx_guardat[2] = u->stack[STACK_EDX];
@@ -94,37 +86,32 @@ void keyboard_routine()
       t->ctx_guardat[15] = u->stack[STACK_USER_SS];
       t->in_keyboard_handler = 1;      // Marcamos que estamos en evento
 
-      // --- PASO C: PREPARAR PILA AUXILIAR (User Space) ---
       // Usamos la página reservada en sys_KeyboardEvent
-      // Calculamos la dirección lineal del techo de esa página
       unsigned int aux_stack_base = (PAG_LOG_INIT_AUX_STACK + 1) << 12;
       unsigned int *user_stack_ptr = (unsigned int *)aux_stack_base;
 
-      // "Push" de los argumentos para libc_keyboard_wrapper
+      // Push de los argumentos para keyboard_wrapper
 
       user_stack_ptr -= 1; *user_stack_ptr = pressed;               // Arg3: pressed
       user_stack_ptr -= 1; *user_stack_ptr = (unsigned int)key;     // Arg2: key
       user_stack_ptr -= 1; *user_stack_ptr = (unsigned int)t->keyboard_func; // Arg1: puntero función
       
-      // Fake Return Address (si el wrapper hace RET, crashea, pero el wrapper debería llamar a int 0x2b)
       user_stack_ptr -= 1; *user_stack_ptr = 0;                     
 
-      // --- PASO D: MODIFICAR CONTEXTO DE RETORNO (HIJACKING) ---
-      // Vuelve a 'libc_keyboard_wrapper' usando la pila auxiliar".
-      
+      // Vuelve a keyboard_wrapper usando la pila auxiliar      
       kernel_stack[-5] = (unsigned long)t->keyboard_wrapper; // Nuevo EIP
       kernel_stack[-2] = (unsigned long)user_stack_ptr;        // Nuevo ESP
 
       
   } 
   else {
-      // 3. Comportamiento Legacy (si no hay función registrada)
+      // (si no hay función registrada)
       if (pressed) {
           printc_xy(0, 0, char_map[keycode]);
       }
   }
 }
-/* En interrupt.c */
+
 void page_fault_routine(int error_code, unsigned int fault_addr)
 {
     struct task_struct *t = current();
@@ -133,40 +120,36 @@ void page_fault_routine(int error_code, unsigned int fault_addr)
     // Calculamos la página lógica que ha fallado
     unsigned int logical_page = fault_addr >> 12;
 
-    /* 1. CASO PILA DE USUARIO (El que ya tenías) */
     if (logical_page >= t->PAG_INICI && logical_page < (t->PAG_INICI + t->STACK_PAGES)) {
-        // ... Tu código para la pila normal ...
         if (get_frame(PT, logical_page) == -1) {
             int new_frame = alloc_frame();
             if (new_frame != -1) {
                 set_ss_pag(PT, logical_page, new_frame);
-                set_cr3(get_DIR(t)); // IMPORTANTE: Flush TLB
+                set_cr3(get_DIR(t)); //Flush TLB
                 return;
             }
         }
     }
     
-    /* 2. [NUEVO] CASO PILA AUXILIAR (El arreglo mágico) */
-    /* Si el fallo ocurre exactamente en la página de la pila auxiliar... */
+    /* Si el fallo ocurre exactamente en la página de la pila auxiliar */
     else if (logical_page == PAG_LOG_INIT_AUX_STACK) {
         
         // Comprobamos si le falta el frame físico
         if (get_frame(PT, logical_page) == -1) {
             
-            // ¡Lo asignamos aquí mismo!
+            // Lo asignamos 
             int new_frame = alloc_frame();
             
             if (new_frame != -1) {
                 set_ss_pag(PT, logical_page, new_frame);
-                set_cr3(get_DIR(t)); // Flush TLB para que la CPU vea el cambio
-                return; // Volvemos a ejecutar la instrucción y funcionará
+                set_cr3(get_DIR(t)); // Flush TLB 
+                return; 
             } else {
                 // Out of memory
                 while(1);
             }
         }
     }
-    /* ------------------------------------------------ */
 
     while(1);
 }

@@ -1,0 +1,31 @@
+Cuando un proceso/hilo ejecute KeyboardEvent, a partir de ese momento,
+al volver de las interrupciones de teclado que reciba, ejecutará un wrapper que 
+llamará a func con sus respectivos argumentos y despues a sys_resume_execution mediante 
+int 0x2b.
+
+- Nuevos campos en el task struct:
+    void (*keyboard_func)(char, int);          // Puntero a la función del usuario         
+    int in_keyboard_handler;                   // Flag: 1 si está ejecutando el evento, 0 si no
+    void *keyboard_wrapper;                    // Wrapper que ejecutara func y resume execution
+    unsigned long aux_stack;                   // Pila auxiliar para ejecutar func
+    unsigned long ctx_guardat[SW_HW_CONTEXT];  // Para guardar todo el contexto hw+sw
+
+- sys_KeyboardEvent(void (*func), void *wrapper)
+    
+    Crea, si no lo está, la pila auxiliar de modo usuario para ejecutar func.
+
+    Pone el primer argumento en el campo del task struct void (*keyboard_func)(char, int) y 
+    el segundo en void *keyboard_wrapper.
+
+- keyboard_routine modificada en interrupt.c
+
+    Si hay alguna funcion registrada en el campo void (*keyboard_func)(char, int) del
+    task struct del proceso/hilo en ejecucción, se guardará el contexto hw+sw y se 
+    llamará al wrapper registrado también en su task struct.
+
+- sys_resume_execution()
+    Función que restaura el contexto previamente guardado en keyboard_routine
+
+- syscall_handler
+    Hemos modificado el handler de las llamadas a sistema para que devuelva error si
+    se está ejecutando func.

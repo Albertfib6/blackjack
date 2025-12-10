@@ -14,31 +14,30 @@
 #define NR_TASKS      10
 #define KERNEL_STACK_SIZE	1024
 
-// Definimos una dirección lógica fija para la Pila Auxiliar (ej. después del código/datos)
-/* En sched.h o mm_address.h */
+// Definimos una dirección lógica fija para la Pila Auxiliar
 #define PAG_LOG_INIT_AUX_STACK 500
 #define AUX_STACK_SIZE 1 // 1 página
 #define  SW_HW_CONTEXT 16
 
 
-#define STACK_EBX (KERNEL_STACK_SIZE - 16)      /**< EBX in software context */
-#define STACK_ECX (KERNEL_STACK_SIZE - 15)      /**< ECX in software context */
-#define STACK_EDX (KERNEL_STACK_SIZE - 14)      /**< EDX in software context */
-#define STACK_ESI (KERNEL_STACK_SIZE - 13)      /**< ESI in software context */
-#define STACK_EDI (KERNEL_STACK_SIZE - 12)      /**< EDI in software context */
-#define STACK_EBP (KERNEL_STACK_SIZE - 11)      /**< EBP in software context */
-#define STACK_EAX (KERNEL_STACK_SIZE - 10)      /**< EAX in software context */
-#define STACK_DS (KERNEL_STACK_SIZE - 9)        /**< DS in software context */
-#define STACK_ES (KERNEL_STACK_SIZE - 8)        /**< ES in software context */
-#define STACK_FS (KERNEL_STACK_SIZE - 7)        /**< FS in software context */
-#define STACK_GS (KERNEL_STACK_SIZE - 6)        /**< GS in software context */
-#define STACK_USER_EIP (KERNEL_STACK_SIZE - 5)  /**< User EIP in hardware context */
-#define STACK_USER_CS (KERNEL_STACK_SIZE - 4)   /**< User CS in hardware context */
-#define STACK_EFLAGS (KERNEL_STACK_SIZE - 3)    /**< EFLAGS in hardware context */
-#define STACK_USER_ESP (KERNEL_STACK_SIZE - 2)  /**< User ESP in hardware context */
-#define STACK_USER_SS (KERNEL_STACK_SIZE - 1)   /**< User SS in hardware context */
-#define STACK_RET_ADDR (KERNEL_STACK_SIZE - 18) /**< Return address for switch_context */
-#define STACK_FAKE_EBP (KERNEL_STACK_SIZE - 19) /**< Fake EBP for switch_context pop */
+#define STACK_EBX (KERNEL_STACK_SIZE - 16)     
+#define STACK_ECX (KERNEL_STACK_SIZE - 15)     
+#define STACK_EDX (KERNEL_STACK_SIZE - 14)     
+#define STACK_ESI (KERNEL_STACK_SIZE - 13)     
+#define STACK_EDI (KERNEL_STACK_SIZE - 12)     
+#define STACK_EBP (KERNEL_STACK_SIZE - 11)     
+#define STACK_EAX (KERNEL_STACK_SIZE - 10)      
+#define STACK_DS (KERNEL_STACK_SIZE - 9)        
+#define STACK_ES (KERNEL_STACK_SIZE - 8)        
+#define STACK_FS (KERNEL_STACK_SIZE - 7)        
+#define STACK_GS (KERNEL_STACK_SIZE - 6)       
+#define STACK_USER_EIP (KERNEL_STACK_SIZE - 5)  
+#define STACK_USER_CS (KERNEL_STACK_SIZE - 4)   
+#define STACK_EFLAGS (KERNEL_STACK_SIZE - 3)    
+#define STACK_USER_ESP (KERNEL_STACK_SIZE - 2)  
+#define STACK_USER_SS (KERNEL_STACK_SIZE - 1)  
+#define STACK_RET_ADDR (KERNEL_STACK_SIZE - 18)
+#define STACK_FAKE_EBP (KERNEL_STACK_SIZE - 19) 
 
 enum state_t { ST_RUN, ST_READY, ST_BLOCKED };
 
@@ -56,11 +55,11 @@ struct task_struct {
   int errno;  /*errno por thread*/
 
 /* Soporte KeyboardEvent */
-  void (*keyboard_func)(char, int); // Puntero a la función del usuario          // Para guardar la pila original del thread
+  void (*keyboard_func)(char, int); // Puntero a la función del usuario         
   int in_keyboard_handler;          // Flag: 1 si está ejecutando el evento, 0 si no
-  void *keyboard_wrapper;
-  unsigned long aux_stack;
-  unsigned long ctx_guardat[SW_HW_CONTEXT];
+  void *keyboard_wrapper; //wrapper que ejecutara func y resume execution
+  unsigned long aux_stack;  // Pila auxiliar para ejecutar func
+  unsigned long ctx_guardat[SW_HW_CONTEXT];  // Para guardar todo el contexto hw+sw
 
 
 };

@@ -596,39 +596,37 @@ int sys_KeyboardEvent(void (*func), void *wrapper) {
 }
 
 int sys_resume_execution() {
-    struct task_struct *task = current();
-    union task_union *task_union = (union task_union *)task; 
+    struct task_struct *t = current();
+    union task_union *u = (union task_union *)t; 
 
 
     // Solo hacemos algo si venimos de un evento de teclado
-    if (task->in_keyboard_handler == 1) {
+    if (t->in_keyboard_handler == 1) {
         
-        // --- RESTAURAR CONTEXTO ORIGINAL ---
+        // --- RESTAURAR CONTEXTO HW Y SW ---
         
-        // Necesitamos acceder a la pila del kernel donde se guardó el estado 
-        // al entrar en ESTA syscall (int 0x2b)
-        unsigned long *kernel_stack = (unsigned long *)&task_union->stack[KERNEL_STACK_SIZE];
+        unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
         
         // Restauramos el EIP y ESP que guardamos en keyboard_routine
-        task_union->stack[STACK_EBX] = task->ctx_guardat[0];
-        task_union->stack[STACK_ECX] = task->ctx_guardat[1];
-        task_union->stack[STACK_EDX] = task->ctx_guardat[2];
-        task_union->stack[STACK_ESI] = task->ctx_guardat[3];
-        task_union->stack[STACK_EDI] = task->ctx_guardat[4];
-        task_union->stack[STACK_EBP] = task->ctx_guardat[5];
-        task_union->stack[STACK_EAX] = task->ctx_guardat[6];
-        task_union->stack[STACK_DS] = task->ctx_guardat[7];
-        task_union->stack[STACK_ES] = task->ctx_guardat[8];
-        task_union->stack[STACK_FS] = task->ctx_guardat[9];
-        task_union->stack[STACK_GS] = task->ctx_guardat[10];
-        task_union->stack[STACK_USER_EIP] = task->ctx_guardat[11];
-        task_union->stack[STACK_USER_CS] = task->ctx_guardat[12];
-        task_union->stack[STACK_EFLAGS] = task->ctx_guardat[13];
-        task_union->stack[STACK_USER_ESP] = task->ctx_guardat[14];
-        task_union->stack[STACK_USER_SS] = task->ctx_guardat[15];
+        u->stack[STACK_EBX] = t->ctx_guardat[0];
+        u->stack[STACK_ECX] = t->ctx_guardat[1];
+        u->stack[STACK_EDX] = t->ctx_guardat[2];
+        u->stack[STACK_ESI] = t->ctx_guardat[3];
+        u->stack[STACK_EDI] = t->ctx_guardat[4];
+        u->stack[STACK_EBP] = t->ctx_guardat[5];
+        u->stack[STACK_EAX] = t->ctx_guardat[6];
+        u->stack[STACK_DS] = t->ctx_guardat[7];
+        u->stack[STACK_ES] = t->ctx_guardat[8];
+        u->stack[STACK_FS] = t->ctx_guardat[9];
+        u->stack[STACK_GS] = t->ctx_guardat[10];
+        u->stack[STACK_USER_EIP] = t->ctx_guardat[11];
+        u->stack[STACK_USER_CS] = t->ctx_guardat[12];
+        u->stack[STACK_EFLAGS] = t->ctx_guardat[13];
+        u->stack[STACK_USER_ESP] = t->ctx_guardat[14];
+        u->stack[STACK_USER_SS] = t->ctx_guardat[15];
         
         // Desactivamos el flag
-        task->in_keyboard_handler = 0;
+        t->in_keyboard_handler = 0;
         
         // Al hacer IRET desde esta syscall, la CPU volverá 
         // exactamente donde estaba el thread antes de pulsar la tecla.

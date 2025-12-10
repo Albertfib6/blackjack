@@ -48,13 +48,6 @@ void clock_routine()
   schedule();
 }
 
-// void keyboard_routine()
-// {
-//   unsigned char c = inb(0x60);
-  
-//   if (c&0x80) printc_xy(0, 0, char_map[c&0x7f]);
-// }
-
 void keyboard_wrapper();
 
 void keyboard_routine()
@@ -67,7 +60,7 @@ void keyboard_routine()
   int pressed = (c & 0x80) ? 0 : 1; 
 
   struct task_struct *t = current();
-  union task_union *task_union = (union task_union *)t; 
+  union task_union *u = (union task_union *)t; 
 
   // 2. Verificar si hay que inyectar el evento
   // Condición: Hay función registrada Y NO estamos ya procesando una (evitar recursión)
@@ -76,38 +69,29 @@ void keyboard_routine()
       char key = char_map[keycode]; // Convertir scancode a char
 
       // --- PASO A: ACCEDER A LA PILA DE SISTEMA DEL HILO ---
-      // Aquí el hardware guardó SS, ESP, EFLAGS, CS, EIP al producirse la interrupción.
       // KERNEL_STACK_SIZE suele ser 1024 dwords (o bytes según tu define).
       // Accedemos como array de unsigned long.
-      unsigned long *kernel_stack = (unsigned long *)&task_union->stack[KERNEL_STACK_SIZE];
+      unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
 
-      // Índices desde el final (según push de hardware x86):
-      // [-1] SS
-      // [-2] ESP (User Stack Original)
-      // [-3] EFLAGS
-      // [-4] CS
-      // [-5] EIP (Instrucción donde se interrumpió el usuario)
-
-      // --- PASO B: GUARDAR CONTEXTO ORIGINAL ---
-      // Guardamos dónde estaba el usuario para que 'int 0x2b' sepa volver.
+      // --- PASO B: GUARDAMOS EL CONTEXTO SW I HW
 
 
-      t->ctx_guardat[0] = task_union->stack[STACK_EBX];
-      t->ctx_guardat[1] = task_union->stack[STACK_ECX];
-      t->ctx_guardat[2] = task_union->stack[STACK_EDX];
-      t->ctx_guardat[3] = task_union->stack[STACK_ESI];
-      t->ctx_guardat[4] = task_union->stack[STACK_EDI];
-      t->ctx_guardat[5] = task_union->stack[STACK_EBP];
-      t->ctx_guardat[6] = task_union->stack[STACK_EAX];
-      t->ctx_guardat[7] = task_union->stack[STACK_DS];
-      t->ctx_guardat[8] = task_union->stack[STACK_ES];
-      t->ctx_guardat[9] = task_union->stack[STACK_FS];
-      t->ctx_guardat[10] = task_union->stack[STACK_GS];
-      t->ctx_guardat[11] = task_union->stack[STACK_USER_EIP];
-      t->ctx_guardat[12] = task_union->stack[STACK_USER_CS];
-      t->ctx_guardat[13] = task_union->stack[STACK_EFLAGS];
-      t->ctx_guardat[14] = task_union->stack[STACK_USER_ESP];
-      t->ctx_guardat[15] = task_union->stack[STACK_USER_SS];
+      t->ctx_guardat[0] = u->stack[STACK_EBX];
+      t->ctx_guardat[1] = u->stack[STACK_ECX];
+      t->ctx_guardat[2] = u->stack[STACK_EDX];
+      t->ctx_guardat[3] = u->stack[STACK_ESI];
+      t->ctx_guardat[4] = u->stack[STACK_EDI];
+      t->ctx_guardat[5] = u->stack[STACK_EBP];
+      t->ctx_guardat[6] = u->stack[STACK_EAX];
+      t->ctx_guardat[7] = u->stack[STACK_DS];
+      t->ctx_guardat[8] = u->stack[STACK_ES];
+      t->ctx_guardat[9] = u->stack[STACK_FS];
+      t->ctx_guardat[10] = u->stack[STACK_GS];
+      t->ctx_guardat[11] = u->stack[STACK_USER_EIP];
+      t->ctx_guardat[12] = u->stack[STACK_USER_CS];
+      t->ctx_guardat[13] = u->stack[STACK_EFLAGS];
+      t->ctx_guardat[14] = u->stack[STACK_USER_ESP];
+      t->ctx_guardat[15] = u->stack[STACK_USER_SS];
       t->in_keyboard_handler = 1;      // Marcamos que estamos en evento
 
       // --- PASO C: PREPARAR PILA AUXILIAR (User Space) ---
@@ -117,8 +101,6 @@ void keyboard_routine()
       unsigned int *user_stack_ptr = (unsigned int *)aux_stack_base;
 
       // "Push" de los argumentos para libc_keyboard_wrapper
-      // Prototipo: void wrapper(void (*func)(...), char key, int pressed)
-      // En C (x86), los argumentos van a la pila en orden inverso.
 
       user_stack_ptr -= 1; *user_stack_ptr = pressed;               // Arg3: pressed
       user_stack_ptr -= 1; *user_stack_ptr = (unsigned int)key;     // Arg2: key
@@ -128,18 +110,15 @@ void keyboard_routine()
       user_stack_ptr -= 1; *user_stack_ptr = 0;                     
 
       // --- PASO D: MODIFICAR CONTEXTO DE RETORNO (HIJACKING) ---
-      // Engañamos al IRET. Le decimos: "No vuelvas donde estabas.
       // Vuelve a 'libc_keyboard_wrapper' usando la pila auxiliar".
       
       kernel_stack[-5] = (unsigned long)t->keyboard_wrapper; // Nuevo EIP
       kernel_stack[-2] = (unsigned long)user_stack_ptr;        // Nuevo ESP
 
-      // FIN: Al terminar esta función, se ejecuta el epílogo de la interrupción 
-      // (RESTORE_ALL + IRET) y la CPU salta al wrapper.
+      
   } 
   else {
       // 3. Comportamiento Legacy (si no hay función registrada)
-      // Si quieres mantener el print por pantalla cuando no hay handler:
       if (pressed) {
           printc_xy(0, 0, char_map[keycode]);
       }
@@ -189,7 +168,6 @@ void page_fault_routine(int error_code, unsigned int fault_addr)
     }
     /* ------------------------------------------------ */
 
-    // Si no es ninguno de los casos anteriores, es un error real -> Bloqueo
     while(1);
 }
 

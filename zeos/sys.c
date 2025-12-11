@@ -29,7 +29,8 @@ void thread_wrapper();
 
 int check_fd(int fd, int permissions)
 {
-  if (fd!=1){
+
+  if (fd!=1 && fd!=10){
     current()->errno = EBADF;
     return -1;
   } 
@@ -39,6 +40,20 @@ int check_fd(int fd, int permissions)
   } 
   return 0;
 }
+
+int write_screen(buffer, nbytes) {
+    if (nbytes > TAM_SCREEN_BUFFER) nbytes = TAM_SCREEN_BUFFER;
+
+    Word *screen = (Word *)SCREEN_MEM;
+    int words = nbytes / 2;
+
+    for (int i = 0; i < words; i++) {
+        screen[i] = ((Word)buffer[i * 2]) | ((Word)buffer[i * 2 + 1] << 8);
+    }
+
+    return nbytes;
+}
+
 
 void user_to_system(void)
 {
@@ -326,6 +341,9 @@ int ret;
     current()->errno = EFAULT;
     return -1;
   }
+   if (fd == 10) {
+        return write_screen(buffer, nbytes);
+    }
 	bytes_left = nbytes;
 	while (bytes_left > TAM_BUFFER) {
 		copy_from_user(buffer, localbuffer, TAM_BUFFER);

@@ -21,6 +21,7 @@
 #define ESCRIPTURA 1
 // Definimos el tamaño máximo que podrá crecer la pila 
 #define MAX_USER_STACK_PAGES 5 
+#define TAM_SCREEN_BUFFER 80*25*2
 
 void * get_ebp();
 extern void ret_from_fork();

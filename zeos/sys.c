@@ -17,6 +17,8 @@
 
 #include <errno.h>
 
+#include <screen.h>
+
 #define LECTURA 0
 #define ESCRIPTURA 1
 // Definimos el tamaño máximo que podrá crecer la pila 
@@ -40,15 +42,6 @@ int check_fd(int fd, int permissions)
   } 
   return 0;
 }
-
-int write_screen(buffer, nbytes) {
-    if (nbytes > TAM_SCREEN_BUFFER) nbytes = TAM_SCREEN_BUFFER;
-
-    copy_from_user(buffer, (char *)SCREEN_MEM, nbytes);
-
-    return nbytes;
-}
-
 
 void user_to_system(void)
 {

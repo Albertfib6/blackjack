@@ -1,4 +1,5 @@
 #include <libc.h>
+#include <screen.h>
 
 char buff[24];
 char buff2[24];
@@ -113,6 +114,7 @@ int __attribute__ ((__section__(".text.main")))
     int local_teclas = 0;
  
     while(1) { 
+        test_screen();
         /* Detectamos si el handler ha modificado las variables */
         if (local_teclas != teclas_pulsadas) {
             

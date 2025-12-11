@@ -19,7 +19,6 @@
 #define AUX_STACK_SIZE 1 // 1 página
 #define  SW_HW_CONTEXT 16
 #define SCREEN_MEM 0xb8000
-#define TAM_SCREEN_BUFFER (80*25*2)
 
 
 #define STACK_EBX (KERNEL_STACK_SIZE - 16)     

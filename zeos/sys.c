@@ -67,16 +67,10 @@ int next_free_id = 1000;
 
 int write_screen(char *buffer, int nbytes) {
     if (nbytes > TAM_SCREEN_BUFFER) nbytes = TAM_SCREEN_BUFFER;
-
-    Word *screen = (Word *)SCREEN_MEM;
-    int words = nbytes / 2;
-
-    for (int i = 0; i < words; i++) {
-        screen[i] = ((Word)buffer[i * 2]) | ((Word)buffer[i * 2 + 1] << 8);
-    }
-
+    copy_from_user(buffer, (char *)SCREEN_MEM, nbytes);
     return nbytes;
 }
+
 
 
 // int sys_fork(void)

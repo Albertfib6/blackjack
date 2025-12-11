@@ -212,15 +212,30 @@ ENTRY(thread_wrapper)
     popl %ebp
     ret
 
-/* --- NUEVO: WRAPPER PARA LEER ERRNO (TLS) --- */
 /* Permite al usuario leer el error de su propio task_struct */
 ENTRY(get_errno)
     pushl %ebp
     movl %esp, %ebp
+    pushl %ebx;  // Save EBX, ESI and EDI if modified
     movl $30, %eax        // ID syscall 
     call syscall_sysenter
-    popl %ebp
-    ret
+    popl %ebx
+	test %eax, %eax
+	js nok	// if (eax < 0)
+	popl %ebp
+	ret
+
+ENTRY(WaitForTick)
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx;  // Save EBX, ESI and EDI if modified
+    movl $31, %eax //ID syscall
+	call syscall_sysenter 
+    popl %ebx
+	test %eax, %eax
+	js nok	// if (eax < 0) 
+	popl %ebp
+	ret
 
 
 

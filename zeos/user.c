@@ -70,7 +70,7 @@ void handler_teclado(char key, int pressed) {
 
 void generar_pantalla(char *buffer) {
     for (int i = 0; i < 25; i++) {
-        for (int j = 0; i < 80; j++) {
+        for (int j = 0; j < 80; j++) {
             int pos = (i * 80 + j) * 2;
             int par = pos%2;
             buffer[pos] = par ? 'X' : 'Y';      
@@ -163,6 +163,7 @@ int __attribute__ ((__section__(".text.main")))
     }
 }
  
+
 
 
 

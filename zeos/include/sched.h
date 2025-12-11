@@ -81,6 +81,7 @@ extern struct task_struct *idle_task;
 
 extern struct list_head freequeue;
 extern struct list_head readyqueue;
+extern struct list_head tick_queue;
 
 /* Inicialitza les dades del proces inicial */
 void init_task1(void);

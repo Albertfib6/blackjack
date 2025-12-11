@@ -1,6 +1,6 @@
 #include <screen.h>
 
-int write_screen(buffer, nbytes) {
+int write_screen(char *buffer, int nbytes) {
     if (nbytes > TAM_SCREEN_BUFFER) nbytes = TAM_SCREEN_BUFFER;
 
     Word *screen = (Word *)SCREEN_MEM;

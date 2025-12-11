@@ -2,6 +2,6 @@
 #include <sched.h>
 #include <libc.h>
 
-int write_screen(buffer, nbytes);
+int write_screen(char *buffer, int nbytes);
 
 void generate_checkerboard_pattern(char *buffer);

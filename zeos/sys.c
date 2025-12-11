@@ -657,3 +657,9 @@ int sys_get_errno()
 void update_errno_to_current(int err) {
     current()->errno = err;
 }
+
+int sys_waitForTick(void) {
+    update_process_state_rr(current(), &tick_queue);
+    sched_next_rr();
+    return 0;
+}

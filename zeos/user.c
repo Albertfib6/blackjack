@@ -71,10 +71,14 @@ void handler_teclado(char key, int pressed) {
 void generar_pantalla(char *buffer) {
     for (int i = 0; i < 25; i++) {
         for (int j = 0; j < 80; j++) {
-            int pos = (i * 80 + j) * 2;
-            int par = pos%2;
-            buffer[pos] = par ? 'X' : 'Y';      
-            buffer[pos + 1] = par ? 0x2F : 0x4F; 
+            int offset = (i * 80 + j) * 2;
+            int es_parell = (i + j) % 2; 
+            if (es_parell) {
+                buffer[offset] = 'X';      
+                buffer[offset + 1] = 0x2F; // Fons Verd (2), Text Blanc (F)
+            } else {
+                buffer[offset] = 'Y';
+                buffer[offset + 1] = 0x4F; // Fons Vermell (4), Text Blanc (F)
         }
     }
 }
@@ -163,6 +167,7 @@ int __attribute__ ((__section__(".text.main")))
     }
 }
  
+
 
 
 

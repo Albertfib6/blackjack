@@ -17,7 +17,7 @@ int write_screen(buffer, nbytes) {
 void generate_checkerboard_pattern(char *buffer) {
     for (int y = 0; y < 25; y++) {
         for (int x = 0; x < 80; x++) {
-            int pos = (y * NUM_COLUMNS + x) * 2;
+            int pos = (y * 80 + x) * 2;
 
             /* Row 0 is black for time/FPS display */
             if (y == 0) {
@@ -35,7 +35,7 @@ void generate_checkerboard_pattern(char *buffer) {
 }
 
 void test_screen() {
-    char screen_buffer[80*25*2];
+    char screen_buffer[TAM_SCREEN_BUFFER];
     generate_checkerboard_pattern(screen_buffer);
     write(10, screen_buffer, sizeof(screen_buffer));
 }

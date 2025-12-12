@@ -414,6 +414,13 @@ void sys_exit()
    del_ss_pag(PT, PAG_LOG_INIT_DATA+i);
   }
 
+  /* Free aux stack if it exists */
+  int aux_frame = get_frame(PT, PAG_LOG_INIT_AUX_STACK);
+  if (aux_frame != -1) {
+      free_frame(aux_frame);
+      del_ss_pag(PT, PAG_LOG_INIT_AUX_STACK);
+  }
+
   /* 2. Recorrer TODAS las tareas para encontrar hilos del mismo proceso */
   for (int i = 0; i < NR_TASKS; i++) {
       t = &(task[i].task);
@@ -602,14 +609,28 @@ void sys_ThreadExit() {
 
 int sys_KeyboardEvent(void (*func), void *wrapper) {
     struct task_struct *t = current();
+    int i;
 
-    // 1. Actualizar siempre la función y el wrapper
-    t->keyboard_func = func;
-    t->keyboard_wrapper = wrapper;
-
-    // 2. Si es una petición de desactivación (func == NULL), retornamos
     if (func == NULL) {
+        for (i = 0; i < NR_TASKS; i++) {
+            if (task[i].task.PID == current()->PID) {
+                task[i].task.keyboard_func = NULL;
+                task[i].task.keyboard_wrapper = NULL;
+            }
+        }
         return 0;
+    }
+
+    if (!access_ok(VERIFY_READ, func, 1)) {
+        current()->errno = EFAULT;
+        return -1;
+    }
+
+    for (i = 0; i < NR_TASKS; i++) {
+        if (task[i].task.PID == current()->PID) {
+            task[i].task.keyboard_func = func;
+            task[i].task.keyboard_wrapper = wrapper;
+        }
     }
 
     // 3. Si ya tenemos pila auxiliar asignada, reutilizarla
@@ -617,8 +638,6 @@ int sys_KeyboardEvent(void (*func), void *wrapper) {
         return 0; 
     }
     
-    t->in_keyboard_handler = 0;
-
 	int frame = alloc_frame();
     if (frame < 0) {
         return -ENOMEM;
@@ -632,7 +651,14 @@ int sys_KeyboardEvent(void (*func), void *wrapper) {
     set_cr3(get_DIR(t));
 
     /* Stack top is at the end of the page (stacks grow downward) */
-     t->aux_stack = (PAG_LOG_INIT_AUX_STACK+1) << 12;
+    unsigned int aux_stack_addr = (PAG_LOG_INIT_AUX_STACK+1) << 12;
+    
+    for (i = 0; i < NR_TASKS; i++) {
+        if (task[i].task.PID == current()->PID) {
+            task[i].task.aux_stack = aux_stack_addr;
+            task[i].task.in_keyboard_handler = 0;
+        }
+    }
 
     return 0;
 }

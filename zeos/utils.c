@@ -56,46 +56,19 @@ int copy_to_user(void *start, void *dest, int size)
 /* access_ok: Checks if a user space pointer is valid */
 int access_ok(int type, const void * addr, unsigned long size)
 {
-    // addr_ini y addr_fin son NÚMEROS DE PÁGINA (ej: 500), no direcciones de memoria
-    unsigned long addr_ini = (((unsigned long)addr) >> 12);
-    unsigned long addr_fin = (((unsigned long)addr + size) >> 12);
+    unsigned long addr_i = (((unsigned long)addr) >> 12);
+    unsigned long addr_f = (((unsigned long)addr + size) >> 12);
 
-    if (addr_fin < addr_ini) return 0; // Overflow check
+    if (addr_f < addr_i) return 0; 
 
-    // -------------------------------------------------------------
-    // 1. CÓDIGO Y DATOS GLOBALES
-    // -------------------------------------------------------------
     switch(type)
     {
         case VERIFY_WRITE:
-            // Solo permitimos escribir en DATOS, no en CÓDIGO
-            if ((addr_ini >= USER_FIRST_PAGE + NUM_PAG_CODE) &&
-                (addr_fin <= USER_FIRST_PAGE + NUM_PAG_CODE + NUM_PAG_DATA))
-                return 1;
+            if ((addr_i >= USER_FIRST_PAGE) && (addr_f < TOTAL_PAGES)) return 1;
             break;
         default:
-            // Lectura permitida en CÓDIGO y DATOS
-            if ((addr_ini >= USER_FIRST_PAGE) &&
-                (addr_fin <= (USER_FIRST_PAGE + NUM_PAG_CODE + NUM_PAG_DATA)))
-                return 1;
-    }
-
-    // -------------------------------------------------------------
-    // 2. PILA DEL THREAD (Dinámica)
-    // -------------------------------------------------------------
-    struct task_struct *t = current();
-    if (addr_ini >= t->PAG_INICI && 
-        addr_fin <= (t->PAG_INICI + t->STACK_PAGES)) {
-        return 1;
-    }
-
-    // -------------------------------------------------------------
-    // 3. PILA AUXILIAR (Interrupciones / Handler)
-    // -------------------------------------------------------------
-    // Comparamos páginas con páginas. PAG_LOG_INIT_AUX_STACK es 500 (aprox).
-    // Si la dirección empieza en la página auxiliar, es válido.
-    if (addr_ini == PAG_LOG_INIT_AUX_STACK) {
-        return 1;
+            if ((addr_i >= USER_FIRST_PAGE) && (addr_f < TOTAL_PAGES)) return 1;
+            break;
     }
 
     // Si no es ninguno de los anteriores, acceso denegado.

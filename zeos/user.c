@@ -12,37 +12,47 @@ static volatile int teclas_pulsadas = 0;
 #define EINPROGRESS 115
 
 /* Función para probar la pila profunda */
+/* En user.c */
+
 void funcion_thread_pesado(void *parametro) {
-    int id = (int)parametro;
-    
-    itoa(id, buff2);
-    write(1, "Valor de ID: ", 13);
-    write(1, buff2, strlen(buff2));
+    /* 1. Imprimimos mensaje INICIAL (Ahora sí saldrá) */
+    write(1, "\n[HILO] Thread iniciado. ID: ", 29);
+    char buff[10];
+    itoa((int)parametro, buff);
+    write(1, buff, strlen(buff));
     write(1, "\n", 1);
-    write(1, "Thread iniciado. Intentando romper la pila...\n", 46);
 
+    write(1, "[HILO] Intentando romper la pila manualment...\n", 47);
 
-    /* PRUEBA DE FUEGO: Crecimiento de Pila
-       El enunciado dice que la pila inicial es 1 página (4096 bytes).
-       Creamos un array de 5000 bytes. Al escribir en el final, 
-       nos salimos de la página inicial.
+    /* 2. TRUCO DE MAGIA: No declaramos array gigante.
+       Usamos punteros para calcular una dirección "lejos" en la pila. */
        
-       - Si tu page_fault_routine funciona: El sistema pausa, asigna memoria y sigue.
-       - Si falla: Saldrá un error de sistema o el ordenador se reiniciará.
-    */
-    char array_gigante[6000]; 
+    int variable_local;
+    /* Obtenemos la dirección actual de la pila (donde está esta variable) */
+    char *puntero_pila = (char*)&variable_local; 
     
-    // Escribimos lejos para forzar el Page Fault
-    array_gigante[0] = 'A';
-    array_gigante[5000] = 'Z'; 
+    /* Nos movemos 5000 bytes hacia abajo (hacia direcciones menores)
+       Esto nos saca de la página actual y nos mete en la siguiente (que no existe aún) */
+    puntero_pila -= 5000; 
 
-    if (array_gigante[0] == 'A' && array_gigante[5000] == 'Z') {
-        write(1, "EXITO: La pila ha crecido dinamicamente!\n", 41);
+    /* 3. EL MOMENTO DE LA VERDAD */
+    /* Al escribir aquí, saltará el Page Fault.
+       - Tu 'page_fault_routine' saltará.
+       - Detectará que es pila dinámica.
+       - Asignará la memoria.
+       - Volverá aquí y escribirá la 'Z'. */
+       
+    *puntero_pila = 'Z'; 
+
+    /* 4. COMPROBACIÓN */
+    if (*puntero_pila == 'Z') {
+        write(1, "[HILO] EXITO: La pila ha crecido y recuperado el valor!\n", 56);
     } else {
-        write(1, "ERROR: Memoria corrupta\n", 24);
+        write(1, "[HILO] ERROR: Memoria corrupta\n", 31);
     }
 
-    /* Probamos que ThreadExit funcione */
+    /* Terminamos el hilo */
+    ThreadExit();
 }
 
 void handler_teclado(char key, int pressed) {
@@ -102,7 +112,7 @@ int __attribute__ ((__section__(".text.main")))
      /* __asm__ __volatile__ ("mov %0, %%cr3"::"r" (0) ); */
 
 	/* Test 1: Creación Básica */
-    /*write(1, "Iniciando Test Milestone 1...\n", 30);
+    write(1, "Iniciando Test Milestone 1...\n", 30);
     
     int pid_hilo = ThreadCreate(funcion_thread_pesado, (void*)1);
 
@@ -123,10 +133,10 @@ int __attribute__ ((__section__(".text.main")))
    /* ESPERA SEGURA:
        Usamos un bucle largo en lugar de pocos yields para dar tiempo de sobra
        al hilo (creación + page fault + impresión) antes de seguir. */
-    /*int i;
+    int i;
     for (i = 0; i < 20000000; i++); 
 
-    write(1, "Test finalizado.\n", 17);*/
+    write(1, "Test finalizado.\n", 17);
 
     write(1, "Test 2: Activando Teclado. PULSA TECLAS.\n", 41);
 

@@ -205,6 +205,20 @@ void init_task1(void)
 
   set_user_pages(c);
 
+  int stack_page = PAG_LOG_INIT_DATA + NUM_PAG_DATA;
+
+  int new_ph_pag = alloc_frame();
+  if (new_ph_pag != -1) {
+    set_ss_pag(c->dir_pages_baseAddr, stack_page, new_ph_pag);
+  }
+  
+  else {
+
+  }
+
+  c->PAG_INICI = stack_page;
+  c->STACK_PAGES = 1;
+
   tss.esp0=(DWord)&(uc->stack[KERNEL_STACK_SIZE]);
   setMSR(0x175, 0, (unsigned long)&(uc->stack[KERNEL_STACK_SIZE]));
 

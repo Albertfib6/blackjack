@@ -74,14 +74,29 @@
     jmp sysenter_fin
 
 sysenter_err:
-    movl $-38, %eax
+    pushl $38
+    call update_errno_to_current
+    addl $4, %esp
+
+
+    movl $-1, %eax
     jmp sysenter_fin
 
 
 sysenter_einprogress:
 
     addl $4, %esp
-    movl $-115, %eax
+
+    pushl $115
+    call update_errno_to_current
+    addl $4, %esp
+
+
+    movl $-1, %eax
+
+
+    jmp sysenter_fin
+
 
 
 sysenter_fin:
@@ -109,8 +124,7 @@ sysenter_fin:
 
     call page_fault_routine
 
-
-
+    addl $8, %esp
 
     popl %ebx; popl %ecx; popl %edx; popl %esi; popl %edi; popl %ebp; popl %eax; popl %ds; popl %es; popl %fs; popl %gs;
 

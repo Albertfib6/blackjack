@@ -141,9 +141,9 @@ sysenter_einprogress:
 
     addl $4, %esp 
     /* Llamamos a la función C para guardar el error en el TLS */
-    pushl $EINPROGRESS          ; Argumento: El código de error positivo
+    pushl $EINPROGRESS          //Argumento: El código de error positivo
     call update_errno_to_current
-    addl $4, %esp               ; Limpiar argumento
+    addl $4, %esp               //Limpiar argumento
     
     /* Preparamos el valor de retorno (-1) para el wrapper */
     movl $-1, %eax

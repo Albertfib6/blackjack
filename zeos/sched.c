@@ -212,12 +212,12 @@ void init_task1(void)
 
   set_user_pages(c);
 
-  int stack_page = PAG_LOG_INIT_DATA + NUM_PAG_DATA;
+  int stack_page = PAG_LOG_INIT_DATA + NUM_PAG_DATA + GAP + MAX_USER_STACK_PAGES;
 
   int new_ph_pag = alloc_frame();
   set_ss_pag(get_PT(c), stack_page, new_ph_pag);
-  c->PAG_INICI = stack_page;
-  c->STACK_PAGES = 5;
+  c->PAG_INICI = stack_page - MAX_USER_STACK_PAGES;
+  c->STACK_PAGES = MAX_USER_STACK_PAGES;
 
   tss.esp0=(DWord)&(uc->stack[KERNEL_STACK_SIZE]);
   setMSR(0x175, 0, (unsigned long)&(uc->stack[KERNEL_STACK_SIZE]));
@@ -281,5 +281,6 @@ void force_task_switch()
 
   sched_next_rr();
 }
+
 
 

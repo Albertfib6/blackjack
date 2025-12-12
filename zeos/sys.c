@@ -220,57 +220,54 @@ int sys_fork(void)
     }
   }
 
-  /* COPIA DE LA PILA DEL HILO ACTUAL (Solo esta pila) */
-  int start_stack = current()->PAG_INICI;
-  int num_stack = current()->STACK_PAGES;
-  
-  for (i = 0; i < num_stack; i++) {
-      int log_page = start_stack + i;
+  /* Resetear pila del hijo para asignarle nuevas páginas */
+  uchild->task.PAG_INICI = 0;
+  uchild->task.STACK_PAGES = 0;
 
-      /* Evitar doble copia si la pila cae dentro de NUM_PAG_DATA */
-      if (log_page >= PAG_LOG_INIT_DATA && log_page < PAG_LOG_INIT_DATA + NUM_PAG_DATA) {
-          continue; 
-      }
-
-      /* Verificar si el padre tiene página física asignada aquí (Growth dinámico) */
-      if (get_frame(parent_PT, log_page) != -1) {
-          new_ph_pag = alloc_frame();
-          if (new_ph_pag != -1) {
-              set_ss_pag(process_PT, log_page, new_ph_pag);
-         
-              /* Copia de memoria: Mapeamos temp en el padre para copiar */
-              int temp_page = NUM_PAG_KERNEL + NUM_PAG_CODE + NUM_PAG_DATA; // Una pág libre
-              set_ss_pag(parent_PT, temp_page, get_frame(process_PT, log_page));
-              copy_data((void*)(log_page<<12), (void*)(temp_page<<12), PAGE_SIZE);
-              del_ss_pag(parent_PT, temp_page);
-              set_cr3(get_DIR(current())); // Flush TLB
-          } else {
-              /* error: No hay memoria para copiar la pila completa. */
-              
-              /* Liberar las páginas de PILA que ya habíamos asignado en este bucle */
-              for (int k = 0; k < i; k++) {
-                  int undo_log_page = start_stack + k;
-                  /* Solo liberamos si realmente asignamos un frame (verificamos en el hijo) */
-                  if (get_frame(process_PT, undo_log_page) != -1) {
-                      free_frame(get_frame(process_PT, undo_log_page));
-                      del_ss_pag(process_PT, undo_log_page);
-                  }
-              }
-
-              /* Liberar las páginas de DATOS GLOBALES asignadas en el paso anterior */
-              for (int k = 0; k < NUM_PAG_DATA; k++) {
-                  free_frame(get_frame(process_PT, PAG_LOG_INIT_DATA + k));
-                  del_ss_pag(process_PT, PAG_LOG_INIT_DATA + k);
-              }
-
-              /* Liberar el task_struct (devolver a la cola de libres) */
-              list_add_tail(lhcurrent, &freequeue);
-
-              /* Retornar código de error */
-              current()->errno = EAGAIN;
-              return -1;
-          }
-      }
+  if (current()->PAG_INICI != 0) {
+    /* ASIGNAR Y COPIAR LA PILA DEL PADRE AL HIJO */
+    int start_stack = current()->PAG_INICI;
+    int num_stack = current()->STACK_PAGES;
+    
+    /* Asignar el mismo número de páginas al hijo */
+    uchild->task.PAG_INICI = start_stack;
+    uchild->task.STACK_PAGES = num_stack;
+    
+    for (i = 0; i < num_stack; i++) {
+        int log_page = start_stack + i;
+        
+        /* Asignar frame físico nuevo para esta página de pila */
+        new_ph_pag = alloc_frame();
+        if (new_ph_pag == -1) {
+            /* Error: no hay memoria. Liberar lo asignado hasta ahora */
+            for (int k = 0; k < i; k++) {
+                free_frame(get_frame(process_PT, start_stack + k));
+                del_ss_pag(process_PT, start_stack + k);
+            }
+            /* Liberar datos */
+            for (int k = 0; k < NUM_PAG_DATA; k++) {
+                free_frame(get_frame(process_PT, PAG_LOG_INIT_DATA + k));
+                del_ss_pag(process_PT, PAG_LOG_INIT_DATA + k);
+            }
+            list_add_tail(lhcurrent, &freequeue);
+            current()->errno = EAGAIN;
+            return -1;
+        }
+        
+        /* Mapear la página al frame */
+        set_ss_pag(process_PT, log_page, new_ph_pag);
+        
+        /* Copiar contenido si el padre tiene esa página */
+        if (parent_PT[log_page].bits.present) {
+            /* Usar una página temporal segura para mapear el frame del hijo en el padre */
+            int temp_page = NUM_PAG_KERNEL + NUM_PAG_CODE + NUM_PAG_DATA;
+            set_ss_pag(parent_PT, temp_page, get_frame(process_PT, log_page));
+            copy_data((void*)(log_page<<12), (void*)(temp_page<<12), PAGE_SIZE);
+            del_ss_pag(parent_PT, temp_page);
+            set_cr3(get_DIR(current())); /* Flush TLB para eliminar el mapeo */
+        }
+    }
+    set_cr3(get_DIR(current())); /* Flush TLB */
   }
 
   /* Copy parent's SYSTEM and CODE to child. */
@@ -295,17 +292,40 @@ int sys_fork(void)
   set_cr3(get_DIR(current()));
 
   /* Configuración del Kernel Stack para el Context Switch (ret_from_fork) */
-  int register_ebp;  
-  register_ebp = (int) get_ebp();
-  register_ebp=(register_ebp - (int)current()) + (int)(uchild);
+  
+  /* 1. Calcular el ESP de usuario del hijo */
+  unsigned int parent_esp = ((union task_union *)current())->stack[KERNEL_STACK_SIZE - 2];
+  unsigned int parent_stack_top = (unsigned int)((current()->PAG_INICI + current()->STACK_PAGES) << 12);
+  unsigned int child_stack_top = (unsigned int)((uchild->task.PAG_INICI + uchild->task.STACK_PAGES) << 12);
+  unsigned int offset = parent_stack_top - parent_esp;
+  unsigned int child_user_esp = child_stack_top - offset;
 
-  uchild->task.register_esp=register_ebp + sizeof(DWord);
-
-  DWord temp_ebp=*(DWord*)register_ebp;
-  uchild->task.register_esp-=sizeof(DWord);
-  *(DWord*)(uchild->task.register_esp)=(DWord)&ret_from_fork;
-  uchild->task.register_esp-=sizeof(DWord);
-  *(DWord*)(uchild->task.register_esp)=temp_ebp;
+  /* 2. Copiar el contexto del kernel stack del padre al hijo */
+  /* El stack del padre tiene: [Trap Frame (5)] + [SAVE_ALL (11)] = 16 dwords */
+  /* Copiamos todo eso al stack del hijo */
+  int k;
+  for (k = 0; k < 16; k++) {
+      uchild->stack[KERNEL_STACK_SIZE - 1 - k] = ((union task_union *)current())->stack[KERNEL_STACK_SIZE - 1 - k];
+  }
+  
+  /* 3. Modificar el ESP de usuario en el stack del hijo */
+  /* ESP está en KERNEL_STACK_SIZE - 2 */
+  uchild->stack[KERNEL_STACK_SIZE - 2] = child_user_esp;
+  
+  /* 4. Modificar EAX a 0 en el stack del hijo (para retorno de fork) */
+  /* Stack layout: SS, ESP, EFLAGS, CS, EIP, GS, FS, ES, DS, EAX ... */
+  /* Indices:      -1, -2,  -3,    -4, -5,  -6, -7, -8, -9, -10 */
+  uchild->stack[KERNEL_STACK_SIZE - 10] = 0;
+  
+  /* 5. Preparar el stack para el context switch (ret_from_fork) */
+  /* switch_stack hace: mov 8(%esp), %esp; popl %ebp; ret */
+  /* Necesitamos poner [ret_from_fork] y [dummy_ebp] en el stack */
+  
+  uchild->stack[KERNEL_STACK_SIZE - 17] = (unsigned int)ret_from_fork;
+  uchild->stack[KERNEL_STACK_SIZE - 18] = 0; /* dummy ebp */
+  
+  /* 6. Actualizar register_esp para que apunte al dummy_ebp */
+  uchild->task.register_esp = (unsigned int)&(uchild->stack[KERNEL_STACK_SIZE - 18]);
 
   /* Set stats to 0 */
   init_stats(&(uchild->task.p_stats));
@@ -397,25 +417,29 @@ void sys_exit()
   /* 2. Recorrer TODAS las tareas para encontrar hilos del mismo proceso */
   for (int i = 0; i < NR_TASKS; i++) {
       t = &(task[i].task);
-      if (t->STACK_PAGES > 0 && t->PAG_INICI > 0) {
-      /* Si la tarea pertenece al proceso que muere (mismo PID) y está en uso */
-      if (t->PID == pid_dead && t->PID != -1) {
-          /* Liberar su pila específica */
-          page_table_entry *thread_PT = get_PT(t); // Comparten DIR, es el mismo
-          for (int j = 0; j < t->STACK_PAGES; j++) {
-              int page = t->PAG_INICI + j;
-              int frame = get_frame(thread_PT, page);
-              if (frame != -1) {
-                  free_frame(frame);
-                  del_ss_pag(thread_PT, page);
+      
+      /* Si la tarea está en uso y pertenece al proceso que muere */
+      if (t->PID != -1 && t->PID == pid_dead) {
+          
+          /* Liberar su pila específica si tiene */
+          if (t->STACK_PAGES > 0 && t->PAG_INICI > 0) {
+              page_table_entry *thread_PT = get_PT(t); 
+              for (int j = 0; j < t->STACK_PAGES; j++) {
+                  int page = t->PAG_INICI + j;
+                  int frame = get_frame(thread_PT, page);
+                  if (frame != -1) {
+                      free_frame(frame);
+                      del_ss_pag(thread_PT, page);
+                  }
               }
+              t->STACK_PAGES = 0; 
+              t->PAG_INICI = 0;
           }
-        t->STACK_PAGES = 0; 
-        t->PAG_INICI = 0;
-        }
+          
+          /* Liberar task_struct */
           t->PID = -1;
           t->TID = -1;
-          list_del(&(t->list));
+          if (t != current()) list_del(&(t->list));
           list_add_tail(&(t->list), &freequeue);
       }
   }
@@ -579,12 +603,20 @@ void sys_ThreadExit() {
 int sys_KeyboardEvent(void (*func), void *wrapper) {
     struct task_struct *t = current();
 
-	if (t->aux_stack != NULL) {
-        return 0; /* Already allocated */
-    }
-    // 1. Registrar la función
+    // 1. Actualizar siempre la función y el wrapper
     t->keyboard_func = func;
     t->keyboard_wrapper = wrapper;
+
+    // 2. Si es una petición de desactivación (func == NULL), retornamos
+    if (func == NULL) {
+        return 0;
+    }
+
+    // 3. Si ya tenemos pila auxiliar asignada, reutilizarla
+	if (t->aux_stack != NULL) {
+        return 0; 
+    }
+    
     t->in_keyboard_handler = 0;
 
 	int frame = alloc_frame();

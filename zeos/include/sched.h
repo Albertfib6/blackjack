@@ -13,6 +13,9 @@
 
 #define NR_TASKS      10
 #define KERNEL_STACK_SIZE	1024
+// Definimos el tamaño máximo que podrá crecer la pila 
+#define MAX_USER_STACK_PAGES 5 
+#define GAP 1
 
 // Definimos una dirección lógica fija para la Pila Auxiliar
 #define PAG_LOG_INIT_AUX_STACK 500

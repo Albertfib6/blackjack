@@ -33,6 +33,8 @@ extern struct list_head blocked;
 struct list_head freequeue;
 // Ready queue
 struct list_head readyqueue;
+//(waitforTick)
+struct list_head tick_queue;
 
 void init_stats(struct stats *s)
 {
@@ -149,6 +151,11 @@ void sched_next_rr(void)
 
 void schedule()
 {
+  while (!list_empty(&tick_queue)) {
+        struct list_head *first = list_first(&tick_queue);
+        struct task_struct *task = list_head_to_task_struct(first);
+        update_process_state_rr(task, &readyqueue);
+  }
   update_sched_data_rr();
   if (needs_sched_rr())
   {
@@ -243,6 +250,7 @@ void init_sched()
 {
   init_freequeue();
   INIT_LIST_HEAD(&readyqueue);
+  INIT_LIST_HEAD(&tick_queue);
 }
 
 struct task_struct* current()

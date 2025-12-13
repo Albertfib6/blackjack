@@ -1,0 +1,21 @@
+
+*** These modified files were found in JOE when it aborted on Fri Dec 12 12:04:33 2025
+*** JOE was aborted because the terminal closed
+
+*** File '/home/alumne/Documents/BJ/blackjack/.git/MERGE_MSG'
+Merge branch 'main' of https://github.com/Albertfib6/blackjack
+# Please enter a commit message to explain why this merge is necessary,
+# especially if it merges an updated upstream into a topic branch.
+#
+# Lines starting with '#' will be ignored, and an empty message aborts
+# the commit.
+
+*** File '(Unnamed)'
+/home/alumne/Documents/BJ/blackjack/.git/MERGE_MSG
+/home/alumne/Documents/BJ/blackjack/.git/MERGE_MSG
+
+*** File '* Startup Log *'
+Processing '/etc/joe/editorrc'...
+Processing '/etc/joe/ftyperc'...
+Finished processing /etc/joe/ftyperc
+Finished processing /etc/joe/editorrc

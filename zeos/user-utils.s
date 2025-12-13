@@ -201,11 +201,26 @@ nok:
     ret
 
 
-
 .globl get_errno; .type get_errno, @function; .align 0; get_errno:
     pushl %ebp
     movl %esp, %ebp
+    pushl %ebx;
     movl $30, %eax
     call syscall_sysenter
-    popl %ebp
-    ret
+    popl %ebx
+ test %eax, %eax
+ js nok
+ popl %ebp
+ ret
+
+.globl WaitForTick; .type WaitForTick, @function; .align 0; WaitForTick:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx;
+    movl $31, %eax
+ call syscall_sysenter
+    popl %ebx
+ test %eax, %eax
+ js nok
+ popl %ebp
+ ret

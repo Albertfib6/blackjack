@@ -41,7 +41,7 @@
  .long sys_ThreadExit
  .long sys_KeyboardEvent
  .long sys_get_errno
- .long sys_ni_syscall
+ .long sys_waitForTick
  .long sys_ni_syscall
  .long sys_ni_syscall
  .long sys_ni_syscall

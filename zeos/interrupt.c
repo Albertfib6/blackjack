@@ -126,7 +126,11 @@ void page_fault_routine(int error_code, unsigned int fault_addr)
             if (new_frame != -1) {
                 set_ss_pag(PT, logical_page, new_frame);
                 set_cr3(get_DIR(t)); //Flush TLB
+                printk("\n[KERNEL] Stack Growth: Page Fault handled!\n");
                 return;
+            } else {
+                printk("\n[KERNEL] Stack Growth: OOM!\n");
+                while(1);
             }
         }
     }
@@ -151,6 +155,7 @@ void page_fault_routine(int error_code, unsigned int fault_addr)
         }
     }
 
+    printk("\n[KERNEL] UNHANDLED PAGE FAULT! Halting.\n");
     while(1);
 }
 

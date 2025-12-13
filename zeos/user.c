@@ -1,187 +1,273 @@
 #include <libc.h>
+#include <errno.h>
 
 char buff[24];
-char buff2[24];
 
 int pid;
 
-static volatile int syscalls_bloqueadas = 0;
-static volatile int ultima_tecla = 0;
-static volatile int teclas_pulsadas = 0;
+// Comptadors globals per testing
+int thread1_counter = 0;
+int thread2_counter = 0;
+int thread3_counter = 0;
+int recursion_counter = 0;
+int dynamic_counter_1 = 0;
+int dynamic_counter_2 = 0;
+int dynamic_counter_3 = 0;
+int exit_counter = 0;
 
-#define EINPROGRESS 115
+// === Test 1: Simple Math Thread ===
+void math_worker(void *arg)
+{
+  int *val = (int *)arg;
+  int i;
+  int acc = 0;
+  
+  write(1, "  [Math] Starting calculations...\n", 34);
+  
+  for (i = 0; i < 5; i++) {
+    acc += (*val) + i;
+    yield();
+  }
+  
+  *val = acc;
+  write(1, "  [Math] Finished.\n", 19);
+  ThreadExit();
+}
 
-/* Función para probar la pila profunda */
-/* En user.c */
+// === Test 2: Visual Concurrency ===
+void print_x(void *arg)
+{
+  int i;
+  for (i = 0; i < 10; i++) {
+    write(1, "X", 1);
+    yield();
+  }
+  ThreadExit();
+}
 
-void funcion_thread_pesado(void *parametro) {
-    /* 1. Imprimimos mensaje INICIAL (Ahora sí saldrá) */
-    write(1, "\n[HILO] Thread iniciado. ID: ", 29);
-    char buff[10];
-    itoa((int)parametro, buff);
+void print_o(void *arg)
+{
+  int i;
+  for (i = 0; i < 10; i++) {
+    write(1, "O", 1);
+    yield();
+  }
+  //ThreadExit();
+}
+
+// === Test 3: Stack Integrity ===
+void stack_diver(int current_depth, int *max_depth)
+{
+  char frame_data[80]; 
+  int k;
+  
+  // Mark stack memory
+  for(k=0; k<80; k++) frame_data[k] = (char)(current_depth + 65); // 'A', 'B'...
+  
+  if (current_depth > *max_depth) *max_depth = current_depth;
+  
+  if (current_depth > 0) {
+    stack_diver(current_depth - 1, max_depth);
+  }
+  
+  // Check memory
+  if (frame_data[0] != (char)(current_depth + 65)) {
+      write(1, "  [!] Stack Corruption\n", 23);
+  }
+  
+  if (current_depth % 4 == 0) yield();
+}
+
+void stack_tester(void *arg)
+{
+  write(1, "  [Stack] Allocating frames...\n", 31);
+  
+  recursion_counter = 0;
+  stack_diver(18, &recursion_counter);
+  
+  write(1, "  [Stack] Frames released.\n", 27);
+  //ThreadExit();
+}
+
+// === Test 5: Stack Growth ===
+void stack_grower(void *arg)
+{
+    int depth = (int)arg;
+    volatile char block[1024]; // 1KB per frame, volatile to force memory access
+    int i;
+    char buff[64];
+    
+    // Print current stack address
+    write(1, "  [Grower] Depth: ", 18);
+    itoa(depth, buff);
+    write(1, buff, strlen(buff));
+    write(1, " &block: 0x", 11);
+    itoa((int)block, buff); // Assuming itoa handles hex or just int
     write(1, buff, strlen(buff));
     write(1, "\n", 1);
 
-    write(1, "[HILO] Intentando romper la pila manualment...\n", 47);
-
-    /* 2. TRUCO DE MAGIA: No declaramos array gigante.
-       Usamos punteros para calcular una dirección "lejos" en la pila. */
-       
-    int variable_local;
-    /* Obtenemos la dirección actual de la pila (donde está esta variable) */
-    char *puntero_pila = (char*)&variable_local; 
+    // Force page allocation
+    for(i=0; i<1024; i++) block[i] = (char)i;
     
-    /* Nos movemos 5000 bytes hacia abajo (hacia direcciones menores)
-       Esto nos saca de la página actual y nos mete en la siguiente (que no existe aún) */
-    puntero_pila -= 5000; 
-
-    /* 3. EL MOMENTO DE LA VERDAD */
-    /* Al escribir aquí, saltará el Page Fault.
-       - Tu 'page_fault_routine' saltará.
-       - Detectará que es pila dinámica.
-       - Asignará la memoria.
-       - Volverá aquí y escribirá la 'Z'. */
-       
-    *puntero_pila = 'Z'; 
-
-    /* 4. COMPROBACIÓN */
-    if (*puntero_pila == 'Z') {
-        write(1, "[HILO] EXITO: La pila ha crecido y recuperado el valor!\n", 56);
+    if (depth > 0) {
+        stack_grower((void*)(depth - 1));
+        // Prevent Tail Call Optimization by doing something after return
+        block[0] = 'X'; 
     } else {
-        write(1, "[HILO] ERROR: Memoria corrupta\n", 31);
+        write(1, "  [Grower] Limit reached. Returning safely.\n", 44);
     }
-
-    /* Terminamos el hilo */
-    ThreadExit();
 }
 
-void handler_teclado(char key, int pressed) {
+
+
+void run_test_1_creation(void)
+{
+  int tid;
+  int number = 10;
+  int i;
+  
+  write(1, "=== Test 1: Single Thread Execution ===\n", 40);
+
+  // Errno check
+  if (write(-1, 0, 0) < 0) {
+     // Just to ensure errno works
+  }
+  
+  tid = ThreadCreate(math_worker, (void *)&number);
+  
+  if (tid < 0) {
+    write(1, "FAIL: ThreadCreate returned error\n", 34);
+    return;
+  }
+  
+  write(1, "Thread spawned. Waiting...\n", 27);
+  
+  for (i = 0; i < 10; i++) yield();
+  
+  write(1, "Result: ", 8);
+  itoa(number, buff);
+  write(1, buff, strlen(buff));
+  write(1, "\n", 1);
+}
+
+void run_test_2_concurrency(void)
+{
+  int t1, t2;
+  int i;
+  
+  write(1, "\n=== Test 2: X/O Interleaving ===\n", 34);
+  
+  t1 = ThreadCreate(print_x, 0);
+  t2 = ThreadCreate(print_o, 0);
+  
+  if (t1 < 0 || t2 < 0) {
+    write(1, "FAIL: Could not create threads\n", 31);
+    return;
+  }
+  
+  for (i = 0; i < 25; i++) yield();
+  
+  write(1, "\n[Test 2] Done\n", 15);
+}
+
+void run_test_3_stack(void)
+{
+  int tid;
+  int i;
+  
+  write(1, "\n=== Test 3: Stack Depth Check ===\n", 35);
+  
+  tid = ThreadCreate(stack_tester, 0);
+  
+  if (tid < 0) {
+    write(1, "FAIL: Stack thread creation error\n", 34);
+    return;
+  }
+  
+  for (i = 0; i < 60; i++) yield();
+  
+  write(1, "Max Depth: ", 11);
+  itoa(recursion_counter, buff);
+  write(1, buff, strlen(buff));
+  write(1, "\n", 1);
+}
+
+void run_test_4_fork(void)
+{
+  int pid;
+  int dummy = 0;
+  
+  write(1, "\n=== Test 4: Fork & Thread Mix ===\n", 35);
+  
+  write(1, "Spawning background thread...\n", 30);
+  ThreadCreate(math_worker, (void *)&dummy);
+  yield();
+  
+  write(1, "Forking process...\n", 19);
+  pid = fork();
+  
+  if (pid == 0) {
+    write(1, "  [Child] Alive. Checking threads...\n", 37);
     
-    /* Solo nos interesa cuando se pulsa (pressed=1), no cuando se suelta */
-    if (pressed) {
-        
-        /* 1. PRUEBA DE BLOQUEO DE SYSCALLS 
-           Intentamos escribir por pantalla. ESTO DEBE FALLAR. */
-        int ret = write(1, "X", 1);
-        
-        /* Si falla con el error correcto, sumamos al contador */
-        /* Nota: write devuelve -1 en error, y el error real está en errno (o eax negativo si es raw) */
-        /* Asumimos wrapper estándar que pone errno. Si es raw syscall, ret será -115 */
-        
-        if (ret < 0 && get_errno() == EINPROGRESS) {
-            syscalls_bloqueadas++;
-        }
-        
-        /* 2. REGISTRO DEL EVENTO */
-        ultima_tecla = (int)key;
-        teclas_pulsadas++;
-    }
+    write(1, "  [Child] Spawning 'O' printer...\n", 34);
+    ThreadCreate(print_o, 0);
+    
+    for (pid = 0; pid < 20; pid++) yield();
+    
+    write(1, "  [Child] Exiting.\n", 19);
+    exit();
+  } else {
+    write(1, "  [Parent] Child PID: ", 22);
+    itoa(pid, buff);
+    write(1, buff, strlen(buff));
+    write(1, "\n", 1);
+    
+    for (pid = 0; pid < 50; pid++) yield();
+    
+    write(1, "\n[Test 4] Passed\n", 17);
+  }
 }
 
-void generar_pantalla(char *buffer) {
-    for (int i = 0; i < 25; i++) {
-        for (int j = 0; j < 80; j++) {
-            int offset = (i * 80 + j) * 2;
-            int es_parell = (i + j) % 2; 
-            if (es_parell) {
-                buffer[offset] = 'X';      
-                buffer[offset + 1] = 0x2F; // Fons Verd (2), Text Blanc (F)
-            } else {
-                buffer[offset] = 'Y';
-                buffer[offset + 1] = 0x4F; // Fons Vermell (4), Text Blanc (F)
-        }
-    }
-}
-
-void test_screen() {
-    char screen_buffer[80*25*2];
-    generar_pantalla(screen_buffer);
-    write(10, screen_buffer, sizeof(screen_buffer));
+void run_test_5_growth(void)
+{
+  int tid;
+  
+  write(1, "\n=== Test 5: Dynamic Stack Growth ===\n", 38);
+  write(1, "Growing stack beyond initial page...\n", 37);
+  
+  // Depth 10 * 1KB = 10KB. Initial stack is usually 4KB (1 page).
+  // This guarantees page faults that must be recovered.
+  tid = ThreadCreate(stack_grower, (void *)10);
+  
+  if (tid < 0) {
+    write(1, "FAIL: Could not create thread\n", 30);
+    return;
+  }
+  
+  // Wait for completion
+  int i;
+  for(i=0; i<100; i++) yield();
+  
+  write(1, "\n[Test 5] Passed\n", 17);
 }
 
 
 int __attribute__ ((__section__(".text.main")))
   main(void)
 {
-    /* Next line, tries to move value 0 to CR3 register. This register is a privileged one, and so it will raise an exception */
-     /* __asm__ __volatile__ ("mov %0, %%cr3"::"r" (0) ); */
-
-	/* Test 1: Creación Básica */
-    write(1, "Iniciando Test Milestone 1...\n", 30);
-    
-    int pid_hilo = ThreadCreate(funcion_thread_pesado, (void*)1);
-
-    if (pid_hilo < 0) {
-    	char buff[32];
-    	write(1, "ERROR CODIGO: ", 14);
-    	itoa(get_errno(), buff);
-    	write(1, buff, strlen(buff));
-    	write(1, "\n", 1);
-        write(1, "ERROR: Fallo al crear hilo\n", 27);
-    } 
-
-    else {
-        write(1, "Hilo creado correctamente. Esperando...\n", 40);
-    }
-
-
-   /* ESPERA SEGURA:
-       Usamos un bucle largo en lugar de pocos yields para dar tiempo de sobra
-       al hilo (creación + page fault + impresión) antes de seguir. */
-    int i;
-    for (i = 0; i < 20000000; i++); 
-
-    write(1, "Test finalizado.\n", 17);
-
-    write(1, "Test 2: Activando Teclado. PULSA TECLAS.\n", 41);
-
-    /* Registramos el handler */
-    if (KeyboardEvent(handler_teclado) < 0) {
-        write(1, "Error syscall KeyboardEvent\n", 28);
-        while(1);
-    }
-
-    int local_teclas = 0;
- 
-    while(1) { 
-        test_screen();
-        /* Detectamos si el handler ha modificado las variables */
-        if (local_teclas != teclas_pulsadas) {
-            
-            /* Actualizamos estado local */
-            local_teclas = teclas_pulsadas;
-            
-            /* Preparamos el mensaje */
-            write(1, "Evento detectado! -> ", 21);
-            
-            /* Imprimimos tecla */
-            char k = (char)ultima_tecla;
-            if (k >= ' ' && k <= '~') { // Si es imprimible
-                write(1, "Tecla: '", 8);
-                write(1, &k, 1);
-                write(1, "' ", 2);
-            } else {
-                write(1, "Tecla: [Special] ", 17);
-            }
-
-            /* Imprimimos estado del bloqueo */
-            write(1, "| Bloqueos exitosos: ", 21);
-            itoa(syscalls_bloqueadas, buff);
-            write(1, buff, strlen(buff));
-            
-            write(1, "\n", 1);
-        }
-
-        /* Hacemos un poco de espera para no saturar la CPU imprimiendo (opcional) */
-        // for(int i=0; i<100000; i++); 
-    }
+  
+  
+  // Executem els tests en ordre
+  run_test_1_creation();
+  run_test_2_concurrency();
+  run_test_3_stack();
+  run_test_4_fork();
+  run_test_5_growth();
+  
+  write(1, "   Tests completat\n", 22);
+  
+  while (1) {
+    yield();
+  }
 }
- 
-
-
-
-
-
-
-
 

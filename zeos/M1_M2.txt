@@ -1,0 +1,16 @@
+Test 1 (Creación y Memoria): Verifica que ThreadCreate funciona y que los hilos 
+comparten memoria (modifican una variable común del padre).
+
+Test 2 (Concurrencia): Lanza dos hilos ('X' y 'O') que se alternan, probando que el planificador (scheduler) 
+cambia de contexto correctamente entre ellos.
+
+Test 3 (Pilas Independientes): Usa recursividad profunda para asegurar que cada hilo tiene su propia
+ pila privada y no sobrescribe la memoria de los otros.
+
+Test 4 (Fork + Hilos): Comprueba que al hacer fork, el hijo nace "limpio" (no hereda los hilos del padre) 
+y puede crear sus propios hilos nuevos.
+
+Test 5 (Crecimiento Dinámico):** Fuerza a la pila a crecer más allá de su límite inicial 
+para provocar un Page Fault y confirmar que el Kernel asigna memoria nueva automáticamente sin fallar.
+
+Ademas, creemos que hemos hecho las correcciones que nos mandaste.

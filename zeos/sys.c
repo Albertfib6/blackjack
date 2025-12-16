@@ -64,7 +64,7 @@ int sys_getpid()
 int next_free_id = 1000;
 
 int write_screen(char *buffer, int nbytes) {
-    if (nbytes > TAM_SCREEN_BUFFER) nbytes = TAM_SCREEN_BUFFER;
+    //if (nbytes > TAM_SCREEN_BUFFER) nbytes = TAM_SCREEN_BUFFER;
     copy_from_user(buffer, (char *)SCREEN_MEM, nbytes);
     return nbytes;
 }
@@ -281,11 +281,13 @@ int sys_fork(void)
   }
   
   /* Copy parent's DATA content to child. */
+  int temp_page = NUM_PAG_KERNEL + NUM_PAG_CODE + NUM_PAG_DATA;
   for (pag=NUM_PAG_KERNEL+NUM_PAG_CODE; pag<NUM_PAG_KERNEL+NUM_PAG_CODE+NUM_PAG_DATA; pag++)
   {
-    set_ss_pag(parent_PT, pag+NUM_PAG_DATA, get_frame(process_PT, pag));
-    copy_data((void*)(pag<<12), (void*)((pag+NUM_PAG_DATA)<<12), PAGE_SIZE);
-    del_ss_pag(parent_PT, pag+NUM_PAG_DATA);
+    set_ss_pag(parent_PT, temp_page, get_frame(process_PT, pag));
+    copy_data((void*)(pag<<12), (void*)(temp_page<<12), PAGE_SIZE);
+    del_ss_pag(parent_PT, temp_page);
+    set_cr3(get_DIR(current())); /* Flush TLB */
   }
   
   /* Deny access to the child's memory space */
@@ -354,6 +356,10 @@ int ret;
     return -1;
   }
    if (fd == 10) {
+        if (nbytes != 80*25*2) {
+             current()->errno = EINVAL;
+             return -1;
+        }
         return write_screen(buffer, nbytes);
     }
 	bytes_left = nbytes;
@@ -672,8 +678,6 @@ int sys_resume_execution() {
     if (t->in_keyboard_handler == 1) {
         
         // --- RESTAURAR CONTEXTO HW Y SW ---
-        
-        unsigned long *kernel_stack = (unsigned long *)&u->stack[KERNEL_STACK_SIZE];
         
         u->stack[STACK_EBX] = t->ctx_guardat[0];
         u->stack[STACK_ECX] = t->ctx_guardat[1];

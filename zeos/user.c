@@ -1,388 +1,829 @@
 #include <libc.h>
-#include <errno.h>
 
-char buff[24];
+/* ==========================================================
+   DEFINICIONS I ESTRUCTURES
+   ========================================================== */
 
-int pid;
+#define SCREEN_WIDTH 80
+#define SCREEN_HEIGHT 25
+#define SCREEN_SIZE (SCREEN_WIDTH * SCREEN_HEIGHT * 2)
 
+// Colors
+#define C_BLACK 0x00
+#define C_BLUE 0x01
+#define C_GREEN 0x02
+#define C_CYAN 0x03
+#define C_RED 0x04
+#define C_MAGENTA 0x05
+#define C_BROWN 0x06
+#define C_LGRAY 0x07
+#define C_DGRAY 0x08
+#define C_LBLUE 0x09
+#define C_LGREEN 0x0A
+#define C_LCYAN 0x0B
+#define C_LRED 0x0C
+#define C_LMAGENTA 0x0D
+#define C_YELLOW 0x0E
+#define C_WHITE 0x0F
 
-static volatile int syscalls_bloqueadas = 0;
-static volatile int ultima_tecla = 0;
-static volatile int teclas_pulsadas = 0;
+// Combinacions de colors (Fons << 4 | Text)
+#define COL_TABLE     (C_GREEN << 4 | C_BLACK)      // Taula verda
+#define COL_CARD      (C_WHITE << 4 | C_BLACK)      // Carta blanca
+#define COL_CARD_RED  (C_WHITE << 4 | C_RED)        // Carta vermella (Cors/Diamants - opcional)
+#define COL_TEXT      (C_GREEN << 4 | C_YELLOW)     // Text normal
+#define COL_HIGHLIGHT (C_BLACK << 4 | C_WHITE)      // Text ressaltat
+#define COL_TITLE     (C_BLACK << 4 | C_YELLOW)     // Títol
+#define COL_ERROR     (C_RED << 4 | C_WHITE)        // Error
 
-#define EINPROGRESS 115
+// Caracters CP437 per marcs dobles
+#define CH_TL 201 // ╔
+#define CH_TR 187 // ╗
+#define CH_BL 200 // ╚
+#define CH_BR 188 // ╝
+#define CH_HOR 205 // ═
+#define CH_VER 186 // ║
 
-// Comptadors globals per testing
-int thread1_counter = 0;
-int thread2_counter = 0;
-int thread3_counter = 0;
-int recursion_counter = 0;
-int dynamic_counter_1 = 0;
-int dynamic_counter_2 = 0;
-int dynamic_counter_3 = 0;
-int exit_counter = 0;
+// Estats del joc
+enum State {
+    ST_BETTING,
+    ST_PLAYER_TURN,
+    ST_DEALER_TURN,
+    ST_GAME_OVER
+};
 
-// === Test 1: Simple Math Thread ===
-void math_worker(void *arg)
-{
-  int *val = (int *)arg;
-  int i;
-  int acc = 0;
-  
-  write(1, "  [Math] Starting calculations...\n", 34);
-  
-  for (i = 0; i < 5; i++) {
-    acc += (*val) + i;
-    yield();
-  }
-  
-  *val = acc;
-  write(1, "  [Math] Finished.\n", 19);
-  ThreadExit();
+typedef struct {
+    int rango; // 1-13 (1=A, 11=J, 12=Q, 13=K)
+    int palo;  // 0-3 (Piques, Cors, Trèvols, Diamants)
+} Carta;
+
+typedef struct {
+    Carta cartas[10];
+    int num_cartas;
+    int valor;      // Valor total
+    int soft;       // 1 si té un As comptat com 11
+} Mano;
+
+typedef struct {
+    Carta cartas[52];
+    int top;
+} Mazo;
+
+typedef struct {
+    int money;
+    int current_bet;
+    Mazo deck;
+    Mano player_hand;
+    Mano dealer_hand;
+    enum State state;
+    char message[64];
+    char last_key_pressed;
+    int anim_played;
+    int is_all_in;
+} Game;
+
+/* ==========================================================
+   VARIABLES GLOBALS
+   ========================================================== */
+
+volatile char ultima_tecla = 0;
+volatile int hi_ha_tecla = 0;
+unsigned int next_rand = 1;
+volatile int game_running = 1;
+char global_buffer[SCREEN_SIZE]; // Global buffer to avoid stack overflow
+
+/* ==========================================================
+   FUNCIONS AUXILIARS
+   ========================================================== */
+
+void sleep_ticks(int ticks) {
+    while (ticks-- > 0) WaitForTick();
 }
 
-// === Test 2: Visual Concurrency ===
-void print_x(void *arg)
-{
-  int i;
-  for (i = 0; i < 10; i++) {
-    write(1, "X", 1);
-    yield();
-  }
-  ThreadExit();
+int my_rand(void) {
+    next_rand = next_rand * 1103515245 + 12345;
+    return (unsigned int)(next_rand / 65536) % 32768;
 }
 
-void print_o(void *arg)
-{
-  int i;
-  for (i = 0; i < 10; i++) {
-    write(1, "O", 1);
-    yield();
-  }
-  //ThreadExit();
+void my_srand(unsigned int seed) {
+    next_rand = seed;
 }
 
-// === Test 3: Stack Integrity ===
-void stack_diver(int current_depth, int *max_depth)
-{
-  char frame_data[80]; 
-  int k;
-  
-  // Mark stack memory
-  for(k=0; k<80; k++) frame_data[k] = (char)(current_depth + 65); // 'A', 'B'...
-  
-  if (current_depth > *max_depth) *max_depth = current_depth;
-  
-  if (current_depth > 0) {
-    stack_diver(current_depth - 1, max_depth);
-  }
-  
-  // Check memory
-  if (frame_data[0] != (char)(current_depth + 65)) {
-      write(1, "  [!] Stack Corruption\n", 23);
-  }
-  
-  if (current_depth % 4 == 0) yield();
+void my_strcpy(char *dest, char *src) {
+    while ((*dest++ = *src++));
 }
 
-void stack_tester(void *arg)
-{
-  write(1, "  [Stack] Allocating frames...\n", 31);
-  
-  recursion_counter = 0;
-  stack_diver(18, &recursion_counter);
-  
-  write(1, "  [Stack] Frames released.\n", 27);
-  //ThreadExit();
+void my_itoa(int n, char *buf) {
+    int i = 0;
+    if (n == 0) { buf[0] = '0'; buf[1] = '\0'; return; }
+    int temp = n;
+    while (temp > 0) { temp /= 10; i++; }
+    buf[i] = '\0';
+    while (n > 0) { buf[--i] = (n % 10) + '0'; n /= 10; }
 }
 
-// === Test 5: Stack Growth ===
-void stack_grower(void *arg)
-{
-    int depth = (int)arg;
-    volatile char block[1024]; // 1KB per frame, volatile to force memory access
-    int i;
-    char buff[64];
-    
-    // Print current stack address
-    write(1, "  [Grower] Depth: ", 18);
-    itoa(depth, buff);
-    write(1, buff, strlen(buff));
-    write(1, " &block: 0x", 11);
-    itoa((int)block, buff); // Assuming itoa handles hex or just int
-    write(1, buff, strlen(buff));
-    write(1, "\n", 1);
+/* ==========================================================
+   LÒGICA DEL JOC
+   ========================================================== */
 
-    // Force page allocation
-    for(i=0; i<1024; i++) block[i] = (char)i;
-    
-    if (depth > 0) {
-        stack_grower((void*)(depth - 1));
-        // Prevent Tail Call Optimization by doing something after return
-        block[0] = 'X'; 
-    } else {
-        write(1, "  [Grower] Limit reached. Returning safely.\n", 44);
+void initMazo(Mazo *m) {
+    int i = 0;
+    for (int p = 0; p < 4; p++) {
+        for (int r = 1; r <= 13; r++) {
+            m->cartas[i].rango = r;
+            m->cartas[i].palo = p;
+            i++;
+        }
+    }
+    m->top = 0;
+    // Barrejar
+    for (int k = 0; k < 1000; k++) {
+        int p1 = my_rand() % 52;
+        int p2 = my_rand() % 52;
+        Carta temp = m->cartas[p1];
+        m->cartas[p1] = m->cartas[p2];
+        m->cartas[p2] = temp;
     }
 }
 
-
-
-void run_test_1_creation(void)
-{
-  int tid;
-  int number = 10;
-  int i;
-  
-  write(1, "=== Test 1: Single Thread Execution ===\n", 40);
-
-  // Errno check
-  if (write(-1, 0, 0) < 0) {
-     // Just to ensure errno works
-  }
-  
-  tid = ThreadCreate(math_worker, (void *)&number);
-  
-  if (tid < 0) {
-    write(1, "FAIL: ThreadCreate returned error\n", 34);
-    return;
-  }
-  
-  write(1, "Thread spawned. Waiting...\n", 27);
-  
-  for (i = 0; i < 10; i++) yield();
-  
-  write(1, "Result: ", 8);
-  itoa(number, buff);
-  write(1, buff, strlen(buff));
-  write(1, "\n", 1);
+int valorCarta(int r) {
+    if (r >= 10) return 10;
+    if (r == 1) return 11; // Per defecte 11
+    return r;
 }
 
-void run_test_2_concurrency(void)
-{
-  int t1, t2;
-  int i;
-  
-  write(1, "\n=== Test 2: X/O Interleaving ===\n", 34);
-  
-  t1 = ThreadCreate(print_x, 0);
-  t2 = ThreadCreate(print_o, 0);
-  
-  if (t1 < 0 || t2 < 0) {
-    write(1, "FAIL: Could not create threads\n", 31);
-    return;
-  }
-  
-  for (i = 0; i < 25; i++) yield();
-  
-  write(1, "\n[Test 2] Done\n", 15);
+void calcularMano(Mano *m) {
+    m->valor = 0;
+    int ases = 0;
+    for (int i = 0; i < m->num_cartas; i++) {
+        int v = valorCarta(m->cartas[i].rango);
+        m->valor += v;
+        if (m->cartas[i].rango == 1) ases++;
+    }
+    while (m->valor > 21 && ases > 0) {
+        m->valor -= 10;
+        ases--;
+    }
 }
 
-void run_test_3_stack(void)
-{
-  int tid;
-  int i;
-  
-  write(1, "\n=== Test 3: Stack Depth Check ===\n", 35);
-  
-  tid = ThreadCreate(stack_tester, 0);
-  
-  if (tid < 0) {
-    write(1, "FAIL: Stack thread creation error\n", 34);
-    return;
-  }
-  
-  for (i = 0; i < 60; i++) yield();
-  
-  write(1, "Max Depth: ", 11);
-  itoa(recursion_counter, buff);
-  write(1, buff, strlen(buff));
-  write(1, "\n", 1);
+void donarCarta(Mazo *m, Mano *h) {
+    if (m->top >= 52) initMazo(m); // Reiniciar si s'acaba
+    h->cartas[h->num_cartas++] = m->cartas[m->top++];
+    calcularMano(h);
 }
 
-void run_test_4_fork(void)
-{
-  int pid;
-  int dummy = 0;
-  
-  write(1, "\n=== Test 4: Fork & Thread Mix ===\n", 35);
-  
-  write(1, "Spawning background thread...\n", 30);
-  ThreadCreate(math_worker, (void *)&dummy);
-  yield();
-  
-  write(1, "Forking process...\n", 19);
-  pid = fork();
-  
-  if (pid == 0) {
-    write(1, "  [Child] Alive. Checking threads...\n", 37);
+void resetRound(Game *g) {
+    g->player_hand.num_cartas = 0;
+    g->dealer_hand.num_cartas = 0;
+    g->current_bet = 0;
+    g->anim_played = 0;
+    g->is_all_in = 0;
     
-    write(1, "  [Child] Spawning 'O' printer...\n", 34);
-    ThreadCreate(print_o, 0);
-    
-    for (pid = 0; pid < 20; pid++) yield();
-    
-    write(1, "  [Child] Exiting.\n", 19);
-    exit();
-  } else {
-    write(1, "  [Parent] Child PID: ", 22);
-    itoa(pid, buff);
-    write(1, buff, strlen(buff));
-    write(1, "\n", 1);
-    
-    for (pid = 0; pid < 50; pid++) yield();
-    
-    write(1, "\n[Test 4] Passed\n", 17);
-  }
-}
-
-void run_test_5_growth(void)
-{
-  int tid;
-  
-  write(1, "\n=== Test 5: Dynamic Stack Growth ===\n", 38);
-  write(1, "Growing stack beyond initial page...\n", 37);
-  
-  // Depth 10 * 1KB = 10KB. Initial stack is usually 4KB (1 page).
-  // This guarantees page faults that must be recovered.
-  tid = ThreadCreate(stack_grower, (void *)10);
-  
-  if (tid < 0) {
-    write(1, "FAIL: Could not create thread\n", 30);
-    return;
-  }
-  
-  // Wait for completion
-  int i;
-  for(i=0; i<100; i++) yield();
-  
-  write(1, "\n[Test 5] Passed\n", 17);
-}
-
-void funcion_thread_pesado(void *parametro) {
-    /* 1. Imprimimos mensaje INICIAL (Ahora sí saldrá) */
-    write(1, "\n[HILO] Thread iniciado. ID: ", 29);
-    char buff[10];
-    itoa((int)parametro, buff);
-    write(1, buff, strlen(buff));
-    write(1, "\n", 1);
-
-    write(1, "[HILO] Intentando romper la pila manualment...\n", 47);
-
-    /* 2. TRUCO DE MAGIA: No declaramos array gigante.
-       Usamos punteros para calcular una dirección "lejos" en la pila. */
-       
-    int variable_local;
-    /* Obtenemos la dirección actual de la pila (donde está esta variable) */
-    char *puntero_pila = (char*)&variable_local; 
-    
-    /* Nos movemos 5000 bytes hacia abajo (hacia direcciones menores)
-       Esto nos saca de la página actual y nos mete en la siguiente (que no existe aún) */
-    puntero_pila -= 5000; 
-
-    /* 3. EL MOMENTO DE LA VERDAD */
-    /* Al escribir aquí, saltará el Page Fault.
-       - Tu 'page_fault_routine' saltará.
-       - Detectará que es pila dinámica.
-       - Asignará la memoria.
-       - Volverá aquí y escribirá la 'Z'. */
-       
-    *puntero_pila = 'Z'; 
-
-    /* 4. COMPROBACIÓN */
-    if (*puntero_pila == 'Z') {
-        write(1, "[HILO] EXITO: La pila ha crecido y recuperado el valor!\n", 56);
+    if (g->money < 10) {
+        g->state = ST_GAME_OVER;
+        my_strcpy(g->message, "RUINA TOTAL! PREM [R] PER REINICIAR JOC.");
     } else {
-        write(1, "[HILO] ERROR: Memoria corrupta\n", 31);
+        g->state = ST_BETTING;
+        my_strcpy(g->message, "FES LA TEVA APOSTA: [1] 10$ [2] 50$ [3] 100$ [4] ALL IN");
+    }
+}
+
+/* ==========================================================
+   GRÀFICS
+   ========================================================== */
+
+void set_pixel(char *b, int x, int y, char c, char color) {
+    if (x < 0 || x >= SCREEN_WIDTH || y < 0 || y >= SCREEN_HEIGHT) return;
+    int p = (y * SCREEN_WIDTH + x) * 2;
+    b[p] = c;
+    b[p + 1] = color;
+}
+
+void draw_rect(char *b, int x, int y, int w, int h, char color) {
+    for (int i = 0; i < h; i++) {
+        for (int j = 0; j < w; j++) {
+            set_pixel(b, x + j, y + i, ' ', color);
+        }
+    }
+}
+
+void print_str(char *b, int x, int y, char *s, char color) {
+    while (*s) {
+        set_pixel(b, x++, y, *s++, color);
+    }
+}
+
+// Caracters CP437 per marcs dobles
+#define CH_TL 201 // ╔
+#define CH_TR 187 // ╗
+#define CH_BL 200 // ╚
+#define CH_BR 188 // ╝
+#define CH_HOR 205 // ═
+#define CH_VER 186 // ║
+
+void draw_card(char *b, int x, int y, Carta c, int hidden) {
+    // Fons de la carta
+    draw_rect(b, x, y, 5, 4, COL_CARD);
+    
+    // Marc de la carta
+    char color = (c.palo == 1 || c.palo == 3) ? COL_CARD_RED : COL_CARD;
+    if (hidden) color = COL_CARD; // Carta oculta sempre negra/blanca
+
+    set_pixel(b, x, y, CH_TL, color);
+    set_pixel(b, x+4, y, CH_TR, color);
+    set_pixel(b, x, y+3, CH_BL, color);
+    set_pixel(b, x+4, y+3, CH_BR, color);
+    
+    for(int i=1; i<4; i++) {
+        set_pixel(b, x+i, y, CH_HOR, color);
+        set_pixel(b, x+i, y+3, CH_HOR, color);
+    }
+    set_pixel(b, x, y+1, CH_VER, color);
+    set_pixel(b, x, y+2, CH_VER, color);
+    set_pixel(b, x+4, y+1, CH_VER, color);
+    set_pixel(b, x+4, y+2, CH_VER, color);
+
+    if (hidden) {
+        print_str(b, x + 1, y + 1, "???", COL_CARD);
+        return;
     }
 
-    /* Terminamos el hilo */
+    char rank[3];
+    if (c.rango == 1) my_strcpy(rank, "A");
+    else if (c.rango == 11) my_strcpy(rank, "J");
+    else if (c.rango == 12) my_strcpy(rank, "Q");
+    else if (c.rango == 13) my_strcpy(rank, "K");
+    else my_itoa(c.rango, rank);
+
+    char suit;
+    if (c.palo == 0) suit = 6; // Spades (CP437)
+    else if (c.palo == 1) suit = 3; // Hearts
+    else if (c.palo == 2) suit = 5; // Clubs
+    else suit = 4; // Diamonds
+
+    // Dibuixar contingut
+    set_pixel(b, x+1, y+1, rank[0], color);
+    if (rank[1]) set_pixel(b, x+2, y+1, rank[1], color);
+    
+    set_pixel(b, x+3, y+2, suit, color);
+}
+
+void render(char *b, Game *g) {
+    // 1. Fons (Solid Green per evitar parpadeig de trama)
+    for (int i = 0; i < SCREEN_HEIGHT; i++) {
+        for (int j = 0; j < SCREEN_WIDTH; j++) {
+            set_pixel(b, j, i, ' ', COL_TABLE); 
+        }
+    }
+
+    // 2. Header
+    draw_rect(b, 0, 0, SCREEN_WIDTH, 3, COL_TITLE);
+    
+    // Title centered in header
+    int cx = SCREEN_WIDTH / 2;
+    print_str(b, cx - 8, 1, "CASINO BAKA BAKA", COL_TITLE);
+    
+    char buf[32];
+    my_strcpy(buf, "DINERS: $");
+    char num[10];
+    my_itoa(g->money, num);
+    int len = 0; while(buf[len]) len++;
+    int k=0; while(num[k]) buf[len++] = num[k++];
+    buf[len] = 0;
+    print_str(b, 2, 1, buf, COL_TITLE);
+
+    if (g->current_bet > 0) {
+        my_strcpy(buf, "APOSTA: $");
+        my_itoa(g->current_bet, num);
+        len = 0; while(buf[len]) len++;
+        k=0; while(num[k]) buf[len++] = num[k++];
+        buf[len] = 0;
+        print_str(b, 60, 1, buf, COL_TITLE);
+    }
+
+    // Side Rules (on the green felt)
+    char rule_col = (C_GREEN << 4) | C_YELLOW;
+    
+    // Left Rule - Moved inwards to avoid animation overlap
+    print_str(b, 10, 8, "BLACKJACK", rule_col);
+    print_str(b, 10, 9, "PAYS 3 to 2", rule_col);
+    
+    // Right Rule - Moved inwards
+    print_str(b, SCREEN_WIDTH - 22, 8, "DEALER", rule_col);
+    print_str(b, SCREEN_WIDTH - 22, 9, "STANDS ON 17", rule_col);
+
+    // 3. Dealer Area
+    // Centrar text "BAKA BAKA: XX"
+    int dealer_cx = 40;
+    print_str(b, dealer_cx - 8, 5, "BAKA BAKA: ", COL_TEXT);
+    
+    if (g->state != ST_BETTING) {
+        char val[10];
+        if (g->state == ST_PLAYER_TURN) print_str(b, dealer_cx + 8, 5, "(?)", COL_TEXT);
+        else {
+            my_itoa(g->dealer_hand.valor, val);
+            print_str(b, dealer_cx + 8, 5, val, COL_TEXT);
+        }
+
+        // Centrar cartes
+        int num_c = g->dealer_hand.num_cartas;
+        int total_w = num_c * 6; // 5 width + 1 space
+        int start_x = 40 - (total_w / 2);
+        
+        for (int i = 0; i < num_c; i++) {
+            int hidden = (i == 0 && g->state == ST_PLAYER_TURN);
+            draw_card(b, start_x + (i * 6), 7, g->dealer_hand.cartas[i], hidden);
+        }
+    }
+
+    // 4. Player Area
+    // Centrar text "ALUMNE SOA: XX"
+    int player_cx = 40;
+    print_str(b, player_cx - 8, 14, "ALUMNE SOA: ", COL_TEXT);
+    
+    if (g->state != ST_BETTING) {
+        char val[10];
+        my_itoa(g->player_hand.valor, val);
+        print_str(b, player_cx + 8, 14, val, COL_TEXT);
+
+        // Centrar cartes
+        int num_c = g->player_hand.num_cartas;
+        int total_w = num_c * 6;
+        int start_x = 40 - (total_w / 2);
+
+        for (int i = 0; i < num_c; i++) {
+            draw_card(b, start_x + (i * 6), 16, g->player_hand.cartas[i], 0);
+        }
+    }
+
+    // 5. Message Bar
+    draw_rect(b, 0, 22, SCREEN_WIDTH, 3, COL_HIGHLIGHT);
+    print_str(b, 2, 23, g->message, COL_HIGHLIGHT);
+
+    // 6. Debug / Last Key
+    char keymsg[20] = "LAST KEY: ";
+    keymsg[10] = g->last_key_pressed ? g->last_key_pressed : '-';
+    keymsg[11] = 0;
+    print_str(b, 65, 23, keymsg, COL_HIGHLIGHT);
+}
+
+void draw_fancy_box(char *b, int x, int y, int w, int h, char color) {
+    draw_rect(b, x, y, w, h, color);
+    
+    set_pixel(b, x, y, CH_TL, color);
+    set_pixel(b, x+w-1, y, CH_TR, color);
+    set_pixel(b, x, y+h-1, CH_BL, color);
+    set_pixel(b, x+w-1, y+h-1, CH_BR, color);
+    
+    for(int i=1; i<w-1; i++) {
+        set_pixel(b, x+i, y, CH_HOR, color);
+        set_pixel(b, x+i, y+h-1, CH_HOR, color);
+    }
+    for(int i=1; i<h-1; i++) {
+        set_pixel(b, x, y+i, CH_VER, color);
+        set_pixel(b, x+w-1, y+i, CH_VER, color);
+    }
+}
+
+void game_over_screen(char *b) {
+    int cx = SCREEN_WIDTH / 2;
+    int cy = SCREEN_HEIGHT / 2;
+    char color = (C_RED << 4) | C_YELLOW;
+    
+    draw_fancy_box(b, cx - 20, cy - 6, 40, 12, color);
+    
+    print_str(b, cx - 4, cy - 4, "GAME OVER", color);
+    print_str(b, cx - 9, cy - 1, "EL SENYOR BAKA BAKA", color);
+    print_str(b, cx - 6, cy + 1, "SEMPRE GUANYA", color);
+    print_str(b, cx - 11, cy + 4, "PREM [R] PER REINICIAR", color);
+}
+
+void play_game_over_animation(char *b, Game *g) {
+    int cx = SCREEN_WIDTH / 2;
+    int cy = SCREEN_HEIGHT / 2;
+    char *l1 = "EL SENYOR BAKA BAKA";
+    char *l2 = "SEMPRE GUANYA";
+
+    for (int i = 0; i < 450; i++) {
+        // 1. Render base game
+        render(b, g);
+
+        // 2. Flashing Background Overlay (Fades out)
+        if (i < 350 && (i / 5) % 2 == 0) {
+            for(int y=0; y<SCREEN_HEIGHT; y+=2) {
+                for(int x=(y%2); x<SCREEN_WIDTH; x+=2) {
+                    set_pixel(b, x, y, ' ', (C_RED << 4) | C_RED);
+                }
+            }
+        }
+
+        // 3. Shaking Text Box (Stops at the end)
+        int shake_x = 0, shake_y = 0;
+        if (i < 350) {
+            shake_x = (my_rand() % 3) - 1;
+            shake_y = (my_rand() % 3) - 1;
+        }
+        
+        int bx = cx - 20 + shake_x;
+        int by = cy - 6 + shake_y;
+
+        char color = (C_RED << 4) | C_YELLOW;
+        if (i < 350 && i % 10 < 5) color = (C_BLACK << 4) | C_RED; // Invert colors
+
+        draw_fancy_box(b, bx, by, 40, 12, color);
+
+        print_str(b, bx + 16, by + 2, "GAME OVER", color);
+        print_str(b, bx + 11, by + 5, l1, color);
+        print_str(b, bx + 14, by + 7, l2, color);
+        
+        // Reveal restart text smoothly
+        if (i > 350) {
+             print_str(b, bx + 9, by + 10, "PREM [R] PER REINICIAR", color);
+        }
+
+        write(10, b, SCREEN_SIZE);
+        sleep_ticks(1);
+    }
+}
+
+void victory_animation(char *b, Game *g) {
+    char *msg = "VICTORY!";
+    int cx = SCREEN_WIDTH / 2;
+    int cy = SCREEN_HEIGHT / 2;
+    
+    // Particle System for smooth confetti
+    #define MAX_PARTICLES 60
+    int px[MAX_PARTICLES];
+    int py[MAX_PARTICLES];
+    int pc[MAX_PARTICLES]; // Color
+    int ps[MAX_PARTICLES]; // Speed
+    
+    // Init particles
+    for(int k=0; k<MAX_PARTICLES; k++) {
+        px[k] = my_rand() % SCREEN_WIDTH;
+        py[k] = -(my_rand() % SCREEN_HEIGHT); // Start above screen
+        pc[k] = (my_rand() % 15) + 1;
+        ps[k] = (my_rand() % 2) + 1; // Speed 1 or 2
+    }
+
+    // Animation loop (longer duration)
+    for (int i = 0; i < 600; i++) {
+        // 1. Clean slate
+        render(b, g);
+
+        // 2. Update and Draw Particles
+        for (int k = 0; k < MAX_PARTICLES; k++) {
+            py[k] += ps[k];
+            if (py[k] >= SCREEN_HEIGHT) {
+                py[k] = -2; // Reset to top
+                px[k] = my_rand() % SCREEN_WIDTH;
+            }
+            
+            if (py[k] >= 0) {
+                char symbol = (k % 2 == 0) ? '$' : '*';
+                set_pixel(b, px[k], py[k], symbol, pc[k]);
+            }
+        }
+        
+        // 3. Flash the message box
+        char bg_col, txt_col;
+        if ((i / 10) % 2 == 0) {
+            bg_col = C_YELLOW;
+            txt_col = C_RED;
+        } else {
+            bg_col = C_RED;
+            txt_col = C_YELLOW;
+        }
+        char color = (bg_col << 4) | txt_col;
+        
+        // Bouncing effect
+        int offset = (i % 20) < 10 ? 0 : 1;
+        
+        // Draw fancy box with border
+        int bx = cx - 10;
+        int by = cy - 3 + offset;
+        draw_rect(b, bx, by, 20, 7, color);
+        
+        // Draw border for box
+        set_pixel(b, bx, by, CH_TL, color);
+        set_pixel(b, bx+19, by, CH_TR, color);
+        set_pixel(b, bx, by+6, CH_BL, color);
+        set_pixel(b, bx+19, by+6, CH_BR, color);
+        for(int z=1; z<19; z++) {
+            set_pixel(b, bx+z, by, CH_HOR, color);
+            set_pixel(b, bx+z, by+6, CH_HOR, color);
+        }
+        for(int z=1; z<6; z++) {
+            set_pixel(b, bx, by+z, CH_VER, color);
+            set_pixel(b, bx+19, by+z, CH_VER, color);
+        }
+
+        print_str(b, cx - 4, cy + offset, msg, color);
+        
+        // 4. Show frame
+        write(10, b, SCREEN_SIZE);
+        
+        // 5. Delay
+        sleep_ticks(1); 
+    }
+}
+
+void simple_victory_animation(char *b, Game *g) {
+    // Simple flashing animation (longer duration, bigger symbols)
+    for (int i = 0; i < 400; i++) {
+        render(b, g);
+
+        char bg_col, txt_col;
+        if ((i / 10) % 2 == 0) {
+            bg_col = C_GREEN;
+            txt_col = C_WHITE;
+        } else {
+            bg_col = C_WHITE;
+            txt_col = C_GREEN;
+        }
+        char color = (bg_col << 4) | txt_col;
+
+        // Draw thicker $ columns on left and right sides
+        for (int y = 4; y < SCREEN_HEIGHT - 4; y++) {
+            // Left block (3 wide)
+            set_pixel(b, 2, y, '$', color);
+            set_pixel(b, 3, y, '$', color);
+            set_pixel(b, 4, y, '$', color);
+            
+            // Right block (3 wide)
+            set_pixel(b, SCREEN_WIDTH - 5, y, '$', color);
+            set_pixel(b, SCREEN_WIDTH - 4, y, '$', color);
+            set_pixel(b, SCREEN_WIDTH - 3, y, '$', color);
+        }
+        
+        write(10, b, SCREEN_SIZE);
+        sleep_ticks(2); 
+    }
+}
+
+/* ==========================================================
+   MAIN
+   ========================================================== */
+
+void teclat_handler(char tecla, int pressed) {
+    if (pressed) {
+        ultima_tecla = tecla;
+        hi_ha_tecla = 1;
+    }
+}
+
+void blackjack_game(void *arg) {
+    struct stats st;
+    get_stats(getpid(), &st);
+    my_srand(st.elapsed_total_ticks);
+
+    char buffer[SCREEN_SIZE];
+    Game game;
+    game.money = 1000;
+    game.last_key_pressed = 0;
+    initMazo(&game.deck);
+    resetRound(&game);
+
+    int dirty = 1;
+    while (game_running) {
+        // Render
+        if (dirty) {
+            render(buffer, &game);
+            if (game.state == ST_GAME_OVER && game.money < 10) {
+                 if (!game.anim_played) {
+                     play_game_over_animation(buffer, &game);
+                     game.anim_played = 1;
+                 }
+                 game_over_screen(buffer);
+            }
+            write(10, buffer, SCREEN_SIZE);
+            dirty = 0;
+        }
+
+        // Input
+        if (!hi_ha_tecla) {
+            // WaitForTick(); // Removed to prevent Idle task from running and missing interrupts
+            yield(); 
+            continue;
+        }
+        
+        dirty = 1;
+        char c = ultima_tecla;
+        hi_ha_tecla = 0;
+        game.last_key_pressed = c;
+
+        if (c == 'q') {
+            game_running = 0;
+            break;
+        }
+
+        switch (game.state) {
+            case ST_BETTING:
+                if (c == '1' && game.money >= 10) {
+                    game.current_bet = 10;
+                    game.money -= 10;
+                    game.state = ST_PLAYER_TURN;
+                } else if (c == '2' && game.money >= 50) {
+                    game.current_bet = 50;
+                    game.money -= 50;
+                    game.state = ST_PLAYER_TURN;
+                } else if (c == '3' && game.money >= 100) {
+                    game.current_bet = 100;
+                    game.money -= 100;
+                    game.state = ST_PLAYER_TURN;
+                } else if (c == '4' && game.money > 0) {
+                    game.current_bet = game.money;
+                    game.money = 0;
+                    game.is_all_in = 1;
+                    game.state = ST_PLAYER_TURN;
+                }
+
+                if (game.state == ST_PLAYER_TURN) {
+                    donarCarta(&game.deck, &game.player_hand);
+                    donarCarta(&game.deck, &game.player_hand);
+                    donarCarta(&game.deck, &game.dealer_hand);
+                    donarCarta(&game.deck, &game.dealer_hand);
+                    my_strcpy(game.message, "JUGAR: [P] DEMANAR  [S] PLANTAR-SE");
+                    
+                    // Blackjack natural?
+                    if (game.player_hand.valor == 21) {
+                        game.state = ST_DEALER_TURN;
+                    }
+                }
+                break;
+
+            case ST_PLAYER_TURN:
+                if (c == 'p' || c == 'P') {
+                    donarCarta(&game.deck, &game.player_hand);
+                    if (game.player_hand.valor > 21) {
+                        if (game.money < 10) {
+                            my_strcpy(game.message, "RUINA TOTAL! PREM [R] PER REINICIAR.");
+                        } else {
+                            my_strcpy(game.message, "T'HAS PASSAT! (BUST). PREM [C] PER CONTINUAR.");
+                        }
+                        game.state = ST_GAME_OVER;
+                    }
+                } else if (c == 's' || c == 'S') {
+                    game.state = ST_DEALER_TURN;
+                }
+                break;
+
+            case ST_GAME_OVER:
+                if (game.money < 10) {
+                    if (c == 'r' || c == 'R') {
+                        game.money = 1000;
+                        resetRound(&game);
+                    }
+                } else if (c == 'c' || c == 'C') {
+                    resetRound(&game);
+                }
+                break;
+                
+            default: break;
+        }
+
+        // Dealer Logic (Automàtic quan canvia l'estat)
+        if (game.state == ST_DEALER_TURN) {
+            // Renderitzar una vegada per ensenyar la carta oculta
+            render(buffer, &game);
+            write(10, buffer, SCREEN_SIZE);
+            
+            // Petit delay
+            sleep_ticks(10); // ~0.5s
+
+            while (game.dealer_hand.valor < 17) {
+                donarCarta(&game.deck, &game.dealer_hand);
+                render(buffer, &game);
+                write(10, buffer, SCREEN_SIZE);
+                sleep_ticks(10);
+            }
+
+            // Avaluar guanyador
+            int pv = game.player_hand.valor;
+            int dv = game.dealer_hand.valor;
+            int won = 0;
+            
+            // Check for Natural Blackjack (2 cards totaling 21)
+            int player_bj = (pv == 21 && game.player_hand.num_cartas == 2);
+            int dealer_bj = (dv == 21 && game.dealer_hand.num_cartas == 2);
+
+            if (pv > 21) {
+                // Ja tractat abans, però per seguretat
+                my_strcpy(game.message, "HAS PERDUT. PREM [C].");
+            } else if (dv > 21) {
+                my_strcpy(game.message, "BAKA BAKA ES PASSA! GUANYES! PREM [C].");
+                game.money += game.current_bet * 2;
+                won = 1;
+            } else if (player_bj && !dealer_bj) {
+                my_strcpy(game.message, "BLACKJACK! PAGO 3:2! PREM [C].");
+                // Pay 3:2 (Bet + 1.5 * Bet) = 2.5 * Bet
+                // Since money was subtracted, we add back 2.5 * Bet
+                game.money += game.current_bet + (game.current_bet * 3) / 2;
+                won = 1;
+            } else if (pv > dv) {
+                my_strcpy(game.message, "GUANYES! PREM [C].");
+                game.money += game.current_bet * 2;
+                won = 1;
+            } else if (pv < dv) {
+                my_strcpy(game.message, "GUANYA EL SENYOR BAKA BAKA. PREM [C].");
+            } else {
+                // Push (includes both having Blackjack)
+                my_strcpy(game.message, "EMPAT (PUSH). PREM [C].");
+                game.money += game.current_bet;
+            }
+            
+            if (game.money < 10) {
+                my_strcpy(game.message, "RUINA TOTAL! PREM [R] PER REINICIAR.");
+            }
+            
+            game.state = ST_GAME_OVER;
+
+            // Actualitzar pantalla amb el resultat final
+            render(buffer, &game);
+            if (won) {
+                if (game.is_all_in) {
+                    victory_animation(buffer, &game);
+                } else {
+                    simple_victory_animation(buffer, &game);
+                }
+            }
+            write(10, buffer, SCREEN_SIZE);
+        }
+    }
+    
+    write(1, "Game Thread Exiting...\n", 23);
     ThreadExit();
 }
 
-void handler_teclado(char key, int pressed) {
+void draw_title_screen(char *b, int frame) {
+    // Fill background - Black
+    for (int i = 0; i < SCREEN_SIZE; i += 2) {
+        b[i] = ' ';
+        b[i+1] = (C_BLACK << 4) | C_LGRAY;
+    }
+
+    int cx = SCREEN_WIDTH / 2;
+    int cy = SCREEN_HEIGHT / 2;
+
+    // Draw Border
+    char border_col = (C_BLACK << 4) | C_GREEN;
+    draw_rect(b, 2, 1, SCREEN_WIDTH - 4, SCREEN_HEIGHT - 2, border_col);
     
-    /* Solo nos interesa cuando se pulsa (pressed=1), no cuando se suelta */
-    if (pressed) {
-        
-        /* 1. PRUEBA DE BLOQUEO DE SYSCALLS 
-           Intentamos escribir por pantalla. ESTO DEBE FALLAR. */
-        int ret = write(1, "X", 1);
-        
-        /* Si falla con el error correcto, sumamos al contador */
-        /* Nota: write devuelve -1 en error, y el error real está en errno (o eax negativo si es raw) */
-        /* Asumimos wrapper estándar que pone errno. Si es raw syscall, ret será -115 */
-        
-        if (ret < 0 && get_errno() == EINPROGRESS) {
-            syscalls_bloqueadas++;
-        }
-        
-        /* 2. REGISTRO DEL EVENTO */
-        ultima_tecla = (int)key;
-        teclas_pulsadas++;
+    // Draw Title Box
+    int bx = cx - 15;
+    int by = cy - 6;
+    char title_col = (C_BLACK << 4) | C_YELLOW;
+    draw_fancy_box(b, bx, by, 30, 8, title_col);
+
+    // Title Text
+    print_str(b, cx - 8, by + 2, "CASINO BAKA BAKA", title_col);
+    print_str(b, cx - 4, by + 4, "BLACKJACK", title_col);
+
+    // Suits decoration
+    set_pixel(b, bx + 2, by + 2, 3, (C_BLACK << 4) | C_RED); // Heart
+    set_pixel(b, bx + 27, by + 2, 4, (C_BLACK << 4) | C_RED); // Diamond
+    set_pixel(b, bx + 2, by + 5, 5, (C_BLACK << 4) | C_WHITE); // Club
+    set_pixel(b, bx + 27, by + 5, 6, (C_BLACK << 4) | C_WHITE); // Spade
+
+    // Flashing "Press Key"
+    if ((frame / 20) % 2 == 0) {
+        char blink_col = (C_BLACK << 4) | C_WHITE;
+        print_str(b, cx - 11, cy + 6, "PRESS ANY KEY TO START", blink_col);
     }
 }
-
-
-
 
 int __attribute__ ((__section__(".text.main")))
   main(void)
 {
-  
-  
-  // Executem els tests en ordre
-  run_test_1_creation();
-  run_test_2_concurrency();
-  run_test_3_stack();
-  run_test_4_fork();
-  run_test_5_growth();
-  
-  write(1, "   Tests completat\n", 22);
-
-  write(1, "Test 6: Activando Teclado. PULSA TECLAS.\n", 41);
-
-    /* Registramos el handler */
-
-    if (KeyboardEvent(handler_teclado) < 0) {
-        write(1, "Error syscall KeyboardEvent\n", 28);
-        while(1);
+    if (KeyboardEvent(teclat_handler) < 0) {
+        write(1, "Error init teclat\n", 18);
+        return 1;
     }
 
-    int local_teclas = 0;
- 
-    while(1) { 
-        //test_screen();
-        /* Detectamos si el handler ha modificado las variables */
-        if (local_teclas != teclas_pulsadas) {
-            
-            /* Actualizamos estado local */
-            local_teclas = teclas_pulsadas;
-            
-            /* Preparamos el mensaje */
-            write(1, "Evento detectado! -> ", 21);
-            
-            /* Imprimimos tecla */
-            char k = (char)ultima_tecla;
-            if (k >= ' ' && k <= '~') { // Si es imprimible
-                write(1, "Tecla: '", 8);
-                write(1, &k, 1);
-                write(1, "' ", 2);
-            } else {
-                write(1, "Tecla: [Special] ", 17);
-            }
-
-            /* Imprimimos estado del bloqueo */
-            write(1, "| Bloqueos exitosos: ", 21);
-            itoa(syscalls_bloqueadas, buff);
-            write(1, buff, strlen(buff));
-            
-            write(1, "\n", 1);
+    int frame = 0;
+    while (!hi_ha_tecla) {
+        // Update screen periodically
+        if (frame % 50 == 0) {
+             draw_title_screen(global_buffer, frame / 50);
+             write(10, global_buffer, SCREEN_SIZE);
         }
+        frame++;
+        
+        // Small delay loop to not burn CPU too crazy fast, but keep checking input
+        for(int k=0; k<1000; k++); 
+    }
+    hi_ha_tecla = 0;
 
-        /* Hacemos un poco de espera para no saturar la CPU imprimiendo (opcional) */
-        // for(int i=0; i<100000; i++); 
+    // Milestone 1: Create a thread for the game
+    if (ThreadCreate(blackjack_game, 0) < 0) {
+        write(1, "Error creating game thread\n", 27);
+        return 1;
     }
 
+    // Main thread waits
+    while(game_running) {
+        yield();
+    }
+    
+    write(1, "Main exiting.\n", 14);
+    return 0;
 }
-
-

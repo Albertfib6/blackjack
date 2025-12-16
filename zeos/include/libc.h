@@ -28,4 +28,10 @@ int yield();
 
 int get_stats(int pid, struct stats *st);
 
+int ThreadCreate(void (*function)(void*), void *parameter);
+void ThreadExit();
+int KeyboardEvent(void (*handler)(char, int));
+int get_errno();
+int WaitForTick();
+
 #endif  /* __LIBC_H__ */

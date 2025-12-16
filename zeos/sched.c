@@ -216,7 +216,7 @@ void init_task1(void)
 
   int new_ph_pag = alloc_frame();
   set_ss_pag(get_PT(c), stack_page, new_ph_pag);
-  c->PAG_INICI = stack_page - MAX_USER_STACK_PAGES;
+  c->PAG_INICI = stack_page - MAX_USER_STACK_PAGES + 1;
   c->STACK_PAGES = MAX_USER_STACK_PAGES;
 
   tss.esp0=(DWord)&(uc->stack[KERNEL_STACK_SIZE]);

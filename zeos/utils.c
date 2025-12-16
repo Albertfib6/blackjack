@@ -56,22 +56,44 @@ int copy_to_user(void *start, void *dest, int size)
 /* access_ok: Checks if a user space pointer is valid */
 int access_ok(int type, const void * addr, unsigned long size)
 {
-    unsigned long addr_i = (((unsigned long)addr) >> 12);
-    unsigned long addr_f = (((unsigned long)addr + size) >> 12);
+    unsigned long start = (unsigned long)addr;
+    unsigned long end = start + size;
 
-    if (addr_f < addr_i) return 0; 
+    /* Comprovacion de overflow */
+    if (end < start) return 0;
 
-    switch(type)
-    {
-        case VERIFY_WRITE:
-            if ((addr_i >= USER_FIRST_PAGE) && (addr_f < TOTAL_PAGES)) return 1;
-            break;
-        default:
-            if ((addr_i >= USER_FIRST_PAGE) && (addr_f < TOTAL_PAGES)) return 1;
-            break;
+    unsigned long user_start = L_USER_START;
+    unsigned long global_end = (PAG_LOG_INIT_DATA + NUM_PAG_DATA) << 12;
+    int is_global = (start >= user_start && end <= global_end);
+
+    /* Proteccion del area de codigo contra escritura */
+    if (type == VERIFY_WRITE) {
+      unsigned long code_end = (USER_FIRST_PAGE + NUM_PAG_CODE) << 12;
+      if (is_global && (start < code_end)) return 0;
     }
+    
+    if (is_global) return 1;
 
-    // Si no es ninguno de los anteriores, acceso denegado.
+    /* permite acceso a pila auxiliar (Milestone 2)*/
+    unsigned long aux_start = PAG_LOG_INIT_AUX_STACK << 12;
+    unsigned long aux_end = (PAG_LOG_INIT_AUX_STACK + 1) << 12;
+    if (start >= aux_start && end <= aux_end) return 1;
+
+    /* Comprobar si la dirección pertenece a alguna pila de usuario activa */
+    struct task_struct *t;
+    for (int i = 0; i < NR_TASKS; i++) {
+      t = &(task[i].task);
+      
+      if (t->PID != -1 && t->PAG_INICI > 0) {
+        unsigned long stack_start = t->PAG_INICI << 12;
+        unsigned long stack_end = (t->PAG_INICI + t->STACK_PAGES) << 12;
+
+        if (start >= stack_start && end <= stack_end) {
+            return 1;
+        }
+      }
+  }
+
     return 0;
 }
 

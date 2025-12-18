@@ -112,15 +112,6 @@ void my_strcpy(char *dest, char *src) {
     while ((*dest++ = *src++));
 }
 
-void my_itoa(int n, char *buf) {
-    int i = 0;
-    if (n == 0) { buf[0] = '0'; buf[1] = '\0'; return; }
-    int temp = n;
-    while (temp > 0) { temp /= 10; i++; }
-    buf[i] = '\0';
-    while (n > 0) { buf[--i] = (n % 10) + '0'; n /= 10; }
-}
-
 /* ==========================================================
    LÒGICA DEL JOC
    ========================================================== */
@@ -244,7 +235,7 @@ void draw_card(char *b, int x, int y, Carta c, int hidden) {
     else if (c.rango == 11) my_strcpy(rank, "J");
     else if (c.rango == 12) my_strcpy(rank, "Q");
     else if (c.rango == 13) my_strcpy(rank, "K");
-    else my_itoa(c.rango, rank);
+    else itoa(c.rango, rank);
 
     char suit;
     if (c.palo == 0) suit = 6;
@@ -276,7 +267,7 @@ void render(char *b, Game *g) {
     char buf[32];
     my_strcpy(buf, "DINERS: $");
     char num[10];
-    my_itoa(g->money, num);
+    itoa(g->money, num);
     int len = 0; while(buf[len]) len++;
     int k=0; while(num[k]) buf[len++] = num[k++];
     buf[len] = 0;
@@ -284,7 +275,7 @@ void render(char *b, Game *g) {
 
     if (g->current_bet > 0) {
         my_strcpy(buf, "APOSTA: $");
-        my_itoa(g->current_bet, num);
+        itoa(g->current_bet, num);
         len = 0; while(buf[len]) len++;
         k=0; while(num[k]) buf[len++] = num[k++];
         buf[len] = 0;
@@ -308,7 +299,7 @@ void render(char *b, Game *g) {
         char val[10];
         if (g->state == ST_PLAYER_TURN) print_str(b, dealer_cx + 8, 5, "(?)", COL_TEXT);
         else {
-            my_itoa(g->dealer_hand.valor, val);
+            itoa(g->dealer_hand.valor, val);
             print_str(b, dealer_cx + 8, 5, val, COL_TEXT);
         }
 
@@ -328,7 +319,7 @@ void render(char *b, Game *g) {
     
     if (g->state != ST_BETTING) {
         char val[10];
-        my_itoa(g->player_hand.valor, val);
+        itoa(g->player_hand.valor, val);
         print_str(b, player_cx + 8, 14, val, COL_TEXT);
 
         int num_c = g->player_hand.num_cartas;

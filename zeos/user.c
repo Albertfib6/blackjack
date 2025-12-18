@@ -26,16 +26,16 @@
 #define C_YELLOW 0x0E
 #define C_WHITE 0x0F
 
-// Combinacions de colors (Fons << 4 | Text)
+// Combinacions de colors 
 #define COL_TABLE     (C_GREEN << 4 | C_BLACK)      // Taula verda
 #define COL_CARD      (C_WHITE << 4 | C_BLACK)      // Carta blanca
-#define COL_CARD_RED  (C_WHITE << 4 | C_RED)        // Carta vermella (Cors/Diamants - opcional)
+#define COL_CARD_RED  (C_WHITE << 4 | C_RED)        // Carta vermella 
 #define COL_TEXT      (C_GREEN << 4 | C_YELLOW)     // Text normal
 #define COL_HIGHLIGHT (C_BLACK << 4 | C_WHITE)      // Text ressaltat
 #define COL_TITLE     (C_BLACK << 4 | C_YELLOW)     // Títol
 #define COL_ERROR     (C_RED << 4 | C_WHITE)        // Error
 
-// Caracters CP437 per marcs dobles
+// Caracters per marcs dobles
 #define CH_TL 201 // ╔
 #define CH_TR 187 // ╗
 #define CH_BL 200 // ╚
@@ -52,8 +52,8 @@ enum State {
 };
 
 typedef struct {
-    int rango; // 1-13 (1=A, 11=J, 12=Q, 13=K)
-    int palo;  // 0-3 (Piques, Cors, Trèvols, Diamants)
+    int rango; // Rang: 1-13 (1=A, 11=J, 12=Q, 13=K)
+    int palo;  // Pal: 0-3 (Piques, Cors, Trèvols, Diamants)
 } Carta;
 
 typedef struct {
@@ -89,14 +89,14 @@ volatile char ultima_tecla = 0;
 volatile int hi_ha_tecla = 0;
 unsigned int next_rand = 1;
 volatile int game_running = 1;
-char global_buffer[SCREEN_SIZE]; // Global buffer to avoid stack overflow
+char global_buffer[SCREEN_SIZE]; 
 
 /* ==========================================================
    FUNCIONS AUXILIARS
    ========================================================== */
 
 void sleep_ticks(int ticks) {
-    while (ticks-- > 0) WaitForTick();
+    while (ticks-- > 0) WaitForTick(); // Milestone 4
 }
 
 int my_rand(void) {
@@ -212,14 +212,6 @@ void print_str(char *b, int x, int y, char *s, char color) {
     }
 }
 
-// Caracters CP437 per marcs dobles
-#define CH_TL 201 // ╔
-#define CH_TR 187 // ╗
-#define CH_BL 200 // ╚
-#define CH_BR 188 // ╝
-#define CH_HOR 205 // ═
-#define CH_VER 186 // ║
-
 void draw_card(char *b, int x, int y, Carta c, int hidden) {
     // Fons de la carta
     draw_rect(b, x, y, 5, 4, COL_CARD);
@@ -255,10 +247,10 @@ void draw_card(char *b, int x, int y, Carta c, int hidden) {
     else my_itoa(c.rango, rank);
 
     char suit;
-    if (c.palo == 0) suit = 6; // Spades (CP437)
-    else if (c.palo == 1) suit = 3; // Hearts
-    else if (c.palo == 2) suit = 5; // Clubs
-    else suit = 4; // Diamonds
+    if (c.palo == 0) suit = 6;
+    else if (c.palo == 1) suit = 3;
+    else if (c.palo == 2) suit = 5; 
+    else suit = 4;
 
     // Dibuixar contingut
     set_pixel(b, x+1, y+1, rank[0], color);
@@ -268,7 +260,7 @@ void draw_card(char *b, int x, int y, Carta c, int hidden) {
 }
 
 void render(char *b, Game *g) {
-    // 1. Fons (Solid Green per evitar parpadeig de trama)
+    // 1. Fons de la taula
     for (int i = 0; i < SCREEN_HEIGHT; i++) {
         for (int j = 0; j < SCREEN_WIDTH; j++) {
             set_pixel(b, j, i, ' ', COL_TABLE); 
@@ -278,7 +270,6 @@ void render(char *b, Game *g) {
     // 2. Header
     draw_rect(b, 0, 0, SCREEN_WIDTH, 3, COL_TITLE);
     
-    // Title centered in header
     int cx = SCREEN_WIDTH / 2;
     print_str(b, cx - 8, 1, "CASINO BAKA BAKA", COL_TITLE);
     
@@ -300,19 +291,16 @@ void render(char *b, Game *g) {
         print_str(b, 60, 1, buf, COL_TITLE);
     }
 
-    // Side Rules (on the green felt)
+    // Regles del joc
     char rule_col = (C_GREEN << 4) | C_YELLOW;
     
-    // Left Rule - Moved inwards to avoid animation overlap
     print_str(b, 10, 8, "BLACKJACK", rule_col);
     print_str(b, 10, 9, "PAYS 3 to 2", rule_col);
     
-    // Right Rule - Moved inwards
     print_str(b, SCREEN_WIDTH - 22, 8, "DEALER", rule_col);
     print_str(b, SCREEN_WIDTH - 22, 9, "STANDS ON 17", rule_col);
 
-    // 3. Dealer Area
-    // Centrar text "BAKA BAKA: XX"
+    // 3. Àrea Baka Baka
     int dealer_cx = 40;
     print_str(b, dealer_cx - 8, 5, "BAKA BAKA: ", COL_TEXT);
     
@@ -324,9 +312,8 @@ void render(char *b, Game *g) {
             print_str(b, dealer_cx + 8, 5, val, COL_TEXT);
         }
 
-        // Centrar cartes
         int num_c = g->dealer_hand.num_cartas;
-        int total_w = num_c * 6; // 5 width + 1 space
+        int total_w = num_c * 6; 
         int start_x = 40 - (total_w / 2);
         
         for (int i = 0; i < num_c; i++) {
@@ -335,8 +322,7 @@ void render(char *b, Game *g) {
         }
     }
 
-    // 4. Player Area
-    // Centrar text "ALUMNE SOA: XX"
+    // 4. Àrea del jugador
     int player_cx = 40;
     print_str(b, player_cx - 8, 14, "ALUMNE SOA: ", COL_TEXT);
     
@@ -345,7 +331,6 @@ void render(char *b, Game *g) {
         my_itoa(g->player_hand.valor, val);
         print_str(b, player_cx + 8, 14, val, COL_TEXT);
 
-        // Centrar cartes
         int num_c = g->player_hand.num_cartas;
         int total_w = num_c * 6;
         int start_x = 40 - (total_w / 2);
@@ -355,11 +340,10 @@ void render(char *b, Game *g) {
         }
     }
 
-    // 5. Message Bar
+    // 5. Barra de missatges
     draw_rect(b, 0, 22, SCREEN_WIDTH, 3, COL_HIGHLIGHT);
     print_str(b, 2, 23, g->message, COL_HIGHLIGHT);
 
-    // 6. Debug / Last Key
     char keymsg[20] = "LAST KEY: ";
     keymsg[10] = g->last_key_pressed ? g->last_key_pressed : '-';
     keymsg[11] = 0;
@@ -404,10 +388,9 @@ void play_game_over_animation(char *b, Game *g) {
     char *l2 = "SEMPRE GUANYA";
 
     for (int i = 0; i < 450; i++) {
-        // 1. Render base game
+        // 1. Renderitza el joc base
         render(b, g);
 
-        // 2. Flashing Background Overlay (Fades out)
         if (i < 350 && (i / 5) % 2 == 0) {
             for(int y=0; y<SCREEN_HEIGHT; y+=2) {
                 for(int x=(y%2); x<SCREEN_WIDTH; x+=2) {
@@ -416,7 +399,7 @@ void play_game_over_animation(char *b, Game *g) {
             }
         }
 
-        // 3. Shaking Text Box (Stops at the end)
+        // 3. Caixa de text 
         int shake_x = 0, shake_y = 0;
         if (i < 350) {
             shake_x = (my_rand() % 3) - 1;
@@ -427,7 +410,7 @@ void play_game_over_animation(char *b, Game *g) {
         int by = cy - 6 + shake_y;
 
         char color = (C_RED << 4) | C_YELLOW;
-        if (i < 350 && i % 10 < 5) color = (C_BLACK << 4) | C_RED; // Invert colors
+        if (i < 350 && i % 10 < 5) color = (C_BLACK << 4) | C_RED; // Inverteix els colors
 
         draw_fancy_box(b, bx, by, 40, 12, color);
 
@@ -435,7 +418,7 @@ void play_game_over_animation(char *b, Game *g) {
         print_str(b, bx + 11, by + 5, l1, color);
         print_str(b, bx + 14, by + 7, l2, color);
         
-        // Reveal restart text smoothly
+           // Mostra el text de reinici suaument
         if (i > 350) {
              print_str(b, bx + 9, by + 10, "PREM [R] PER REINICIAR", color);
         }
@@ -450,31 +433,31 @@ void victory_animation(char *b, Game *g) {
     int cx = SCREEN_WIDTH / 2;
     int cy = SCREEN_HEIGHT / 2;
     
-    // Particle System for smooth confetti
+    // Sistema de partícules confeti 
     #define MAX_PARTICLES 60
     int px[MAX_PARTICLES];
     int py[MAX_PARTICLES];
     int pc[MAX_PARTICLES]; // Color
-    int ps[MAX_PARTICLES]; // Speed
+    int ps[MAX_PARTICLES]; // Velocitat
     
-    // Init particles
+    // Inicialitza les partícules
     for(int k=0; k<MAX_PARTICLES; k++) {
         px[k] = my_rand() % SCREEN_WIDTH;
-        py[k] = -(my_rand() % SCREEN_HEIGHT); // Start above screen
+        py[k] = -(my_rand() % SCREEN_HEIGHT); // Comença per sobre de la pantalla
         pc[k] = (my_rand() % 15) + 1;
-        ps[k] = (my_rand() % 2) + 1; // Speed 1 or 2
+        ps[k] = (my_rand() % 2) + 1; 
     }
 
-    // Animation loop (longer duration)
+    // Bucle d'animació 
     for (int i = 0; i < 600; i++) {
-        // 1. Clean slate
+        // 1. Neteja l'escena
         render(b, g);
 
-        // 2. Update and Draw Particles
+        // 2. Actualitza i dibuixa les partícules
         for (int k = 0; k < MAX_PARTICLES; k++) {
             py[k] += ps[k];
             if (py[k] >= SCREEN_HEIGHT) {
-                py[k] = -2; // Reset to top
+                py[k] = -2; // Reinicia a dalt
                 px[k] = my_rand() % SCREEN_WIDTH;
             }
             
@@ -484,7 +467,7 @@ void victory_animation(char *b, Game *g) {
             }
         }
         
-        // 3. Flash the message box
+        // 3. Flaix a la capsa del missatge
         char bg_col, txt_col;
         if ((i / 10) % 2 == 0) {
             bg_col = C_YELLOW;
@@ -495,15 +478,15 @@ void victory_animation(char *b, Game *g) {
         }
         char color = (bg_col << 4) | txt_col;
         
-        // Bouncing effect
+        // Efecte de rebot
         int offset = (i % 20) < 10 ? 0 : 1;
         
-        // Draw fancy box with border
+        // Dibuixa una capsa 
         int bx = cx - 10;
         int by = cy - 3 + offset;
         draw_rect(b, bx, by, 20, 7, color);
         
-        // Draw border for box
+        // Dibuixa la vora de la capsa
         set_pixel(b, bx, by, CH_TL, color);
         set_pixel(b, bx+19, by, CH_TR, color);
         set_pixel(b, bx, by+6, CH_BL, color);
@@ -519,16 +502,16 @@ void victory_animation(char *b, Game *g) {
 
         print_str(b, cx - 4, cy + offset, msg, color);
         
-        // 4. Show frame
+        // 4. Mostra el fotograma
         write(10, b, SCREEN_SIZE);
         
-        // 5. Delay
+        // 5. Retard
         sleep_ticks(1); 
     }
 }
 
 void simple_victory_animation(char *b, Game *g) {
-    // Simple flashing animation (longer duration, bigger symbols)
+    // Animació de victòria quan no es all in
     for (int i = 0; i < 400; i++) {
         render(b, g);
 
@@ -542,14 +525,14 @@ void simple_victory_animation(char *b, Game *g) {
         }
         char color = (bg_col << 4) | txt_col;
 
-        // Draw thicker $ columns on left and right sides
+        // Dibuixa columnes de $ als laterals
         for (int y = 4; y < SCREEN_HEIGHT - 4; y++) {
-            // Left block (3 wide)
+            // Bloc esquerre (amplada 3)
             set_pixel(b, 2, y, '$', color);
             set_pixel(b, 3, y, '$', color);
             set_pixel(b, 4, y, '$', color);
             
-            // Right block (3 wide)
+            // Bloc dret (amplada 3)
             set_pixel(b, SCREEN_WIDTH - 5, y, '$', color);
             set_pixel(b, SCREEN_WIDTH - 4, y, '$', color);
             set_pixel(b, SCREEN_WIDTH - 3, y, '$', color);
@@ -585,7 +568,7 @@ void blackjack_game(void *arg) {
 
     int dirty = 1;
     while (game_running) {
-        // Render
+        // Renderitzat
         if (dirty) {
             render(buffer, &game);
             if (game.state == ST_GAME_OVER && game.money < 10) {
@@ -599,9 +582,8 @@ void blackjack_game(void *arg) {
             dirty = 0;
         }
 
-        // Input
+        // Entrada
         if (!hi_ha_tecla) {
-            // WaitForTick(); // Removed to prevent Idle task from running and missing interrupts
             yield(); 
             continue;
         }
@@ -644,7 +626,6 @@ void blackjack_game(void *arg) {
                     donarCarta(&game.deck, &game.dealer_hand);
                     my_strcpy(game.message, "JUGAR: [P] DEMANAR  [S] PLANTAR-SE");
                     
-                    // Blackjack natural?
                     if (game.player_hand.valor == 21) {
                         game.state = ST_DEALER_TURN;
                     }
@@ -681,14 +662,14 @@ void blackjack_game(void *arg) {
             default: break;
         }
 
-        // Dealer Logic (Automàtic quan canvia l'estat)
+        // Lògica del BAKA BAKA
         if (game.state == ST_DEALER_TURN) {
             // Renderitzar una vegada per ensenyar la carta oculta
             render(buffer, &game);
             write(10, buffer, SCREEN_SIZE);
             
             // Petit delay
-            sleep_ticks(10); // ~0.5s
+            sleep_ticks(10); 
 
             while (game.dealer_hand.valor < 17) {
                 donarCarta(&game.deck, &game.dealer_hand);
@@ -702,7 +683,7 @@ void blackjack_game(void *arg) {
             int dv = game.dealer_hand.valor;
             int won = 0;
             
-            // Check for Natural Blackjack (2 cards totaling 21)
+            // Comprovar blackjack natural (2 cartes sumant 21)
             int player_bj = (pv == 21 && game.player_hand.num_cartas == 2);
             int dealer_bj = (dv == 21 && game.dealer_hand.num_cartas == 2);
 
@@ -715,8 +696,8 @@ void blackjack_game(void *arg) {
                 won = 1;
             } else if (player_bj && !dealer_bj) {
                 my_strcpy(game.message, "BLACKJACK! PAGO 3:2! PREM [C].");
-                // Pay 3:2 (Bet + 1.5 * Bet) = 2.5 * Bet
-                // Since money was subtracted, we add back 2.5 * Bet
+                // Paga 3:2 (aposta + 1,5 * aposta) = 2,5 * aposta
+                // Com que ja s'havia restat, hi sumem 2,5 * aposta
                 game.money += game.current_bet + (game.current_bet * 3) / 2;
                 won = 1;
             } else if (pv > dv) {
@@ -726,7 +707,7 @@ void blackjack_game(void *arg) {
             } else if (pv < dv) {
                 my_strcpy(game.message, "GUANYA EL SENYOR BAKA BAKA. PREM [C].");
             } else {
-                // Push (includes both having Blackjack)
+                // Empat (inclou que tots dos tinguin blackjack)
                 my_strcpy(game.message, "EMPAT (PUSH). PREM [C].");
                 game.money += game.current_bet;
             }
@@ -755,7 +736,7 @@ void blackjack_game(void *arg) {
 }
 
 void draw_title_screen(char *b, int frame) {
-    // Fill background - Black
+    // Omple el fons - negre
     for (int i = 0; i < SCREEN_SIZE; i += 2) {
         b[i] = ' ';
         b[i+1] = (C_BLACK << 4) | C_LGRAY;
@@ -764,27 +745,27 @@ void draw_title_screen(char *b, int frame) {
     int cx = SCREEN_WIDTH / 2;
     int cy = SCREEN_HEIGHT / 2;
 
-    // Draw Border
+    // Dibuixa la vora
     char border_col = (C_BLACK << 4) | C_GREEN;
     draw_rect(b, 2, 1, SCREEN_WIDTH - 4, SCREEN_HEIGHT - 2, border_col);
     
-    // Draw Title Box
+    // Dibuixa la capsa del títol
     int bx = cx - 15;
     int by = cy - 6;
     char title_col = (C_BLACK << 4) | C_YELLOW;
     draw_fancy_box(b, bx, by, 30, 8, title_col);
 
-    // Title Text
+    // Text del títol
     print_str(b, cx - 8, by + 2, "CASINO BAKA BAKA", title_col);
     print_str(b, cx - 4, by + 4, "BLACKJACK", title_col);
 
-    // Suits decoration
-    set_pixel(b, bx + 2, by + 2, 3, (C_BLACK << 4) | C_RED); // Heart
-    set_pixel(b, bx + 27, by + 2, 4, (C_BLACK << 4) | C_RED); // Diamond
-    set_pixel(b, bx + 2, by + 5, 5, (C_BLACK << 4) | C_WHITE); // Club
-    set_pixel(b, bx + 27, by + 5, 6, (C_BLACK << 4) | C_WHITE); // Spade
+    // Decoració dels pals
+    set_pixel(b, bx + 2, by + 2, 3, (C_BLACK << 4) | C_RED); // Cor
+    set_pixel(b, bx + 27, by + 2, 4, (C_BLACK << 4) | C_RED); // Diamant
+    set_pixel(b, bx + 2, by + 5, 5, (C_BLACK << 4) | C_WHITE); // Trèvol
+    set_pixel(b, bx + 27, by + 5, 6, (C_BLACK << 4) | C_WHITE); // Pica
 
-    // Flashing "Press Key"
+    // Parpelleig de "Prem una tecla"
     if ((frame / 20) % 2 == 0) {
         char blink_col = (C_BLACK << 4) | C_WHITE;
         print_str(b, cx - 11, cy + 6, "PRESS ANY KEY TO START", blink_col);
@@ -793,7 +774,8 @@ void draw_title_screen(char *b, int frame) {
 
 int __attribute__ ((__section__(".text.main")))
   main(void)
-{
+{   
+     // Milestone 2: teclat
     if (KeyboardEvent(teclat_handler) < 0) {
         write(1, "Error init teclat\n", 18);
         return 1;
@@ -801,25 +783,25 @@ int __attribute__ ((__section__(".text.main")))
 
     int frame = 0;
     while (!hi_ha_tecla) {
-        // Update screen periodically
+        // Actualitza la pantalla periòdicament
         if (frame % 50 == 0) {
              draw_title_screen(global_buffer, frame / 50);
              write(10, global_buffer, SCREEN_SIZE);
         }
         frame++;
         
-        // Small delay loop to not burn CPU too crazy fast, but keep checking input
+        // Petit bucle de retard 
         for(int k=0; k<1000; k++); 
     }
     hi_ha_tecla = 0;
 
-    // Milestone 1: Create a thread for the game
+    // Milestone 1: crear un thread pel joc
     if (ThreadCreate(blackjack_game, 0) < 0) {
         write(1, "Error creating game thread\n", 27);
         return 1;
     }
 
-    // Main thread waits
+    // El fil principal espera
     while(game_running) {
         yield();
     }

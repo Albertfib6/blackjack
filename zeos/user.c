@@ -88,7 +88,6 @@ typedef struct {
 volatile char ultima_tecla = 0;
 volatile int hi_ha_tecla = 0;
 unsigned int next_rand = 1;
-volatile int game_running = 1;
 char global_buffer[SCREEN_SIZE]; 
 
 /* ==========================================================
@@ -558,7 +557,7 @@ void blackjack_game(void *arg) {
     resetRound(&game);
 
     int dirty = 1;
-    while (game_running) {
+    while (1) {
         // Renderitzat
         if (dirty) {
             render(buffer, &game);
@@ -716,9 +715,6 @@ void blackjack_game(void *arg) {
             write(10, buffer, SCREEN_SIZE);
         }
     }
-    
-    write(1, "Game Thread Exiting...\n", 23);
-    ThreadExit();
 }
 
 void draw_title_screen(char *b, int frame) {
@@ -787,11 +783,5 @@ int __attribute__ ((__section__(".text.main")))
         return 1;
     }
 
-    // El fil principal espera
-    while(game_running) {
-        yield();
-    }
-    
-    write(1, "Main exiting.\n", 14);
-    return 0;
+    while(1);
 }
